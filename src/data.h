@@ -16,6 +16,7 @@ extern float extPressure;
 extern float intTemperature;
 extern float intHumidity;
 extern bool haveExtData;
+extern bool haveIntData;
 
 extern ForecastDay forecast[3];
 extern int forecastCount;

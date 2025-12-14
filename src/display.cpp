@@ -13,6 +13,7 @@ static Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 String utf8rus(String source) {
   int i, k;
   String target;
+  target.reserve(source.length()); // avoid repeated allocations on small heap
   unsigned char n;
   char m[2] = { '0', '\0' };
 
@@ -60,7 +61,7 @@ uint16_t colorForHumidity(float humidity) {
 }
 
 String labelForDate(const String& dateStr) {
-  if (dateStr.length() >= 10) return dateStr.substring(8); // only day
+  if (dateStr.length() == 10) return dateStr.substring(8); // only day
   return dateStr;
 }
 
@@ -194,8 +195,12 @@ void drawMainScreen() {
   }
 
   drawCenteredText(utf8rus("вътре"), rightCenterX, labelY, 3, ILI9341_WHITE);
-  drawCenteredText(String(intTemperature, 1), rightCenterX, tempY, 6, colorForTemperature(intTemperature));
-  drawCenteredText(String(intHumidity, 0) + " %", rightCenterX, humidityY, 4, colorForHumidity(intHumidity));
+  if (haveIntData) {
+    drawCenteredText(String(intTemperature, 1), rightCenterX, tempY, 6, colorForTemperature(intTemperature));
+    drawCenteredText(String(intHumidity, 0) + " %", rightCenterX, humidityY, 4, colorForHumidity(intHumidity));
+  } else {
+    drawCenteredText(utf8rus("няма данни"), rightCenterX, tempY, 3, ILI9341_YELLOW);
+  }
 
   if (haveExtData) drawPressureBar(20, 190, extPressure);
 }

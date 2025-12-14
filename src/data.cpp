@@ -12,6 +12,8 @@ float extHumidity = 0.0f;
 float extPressure = 0.0f;
 bool haveExtData = false;
 
+bool haveIntData = false;
+
 // Internal readings (filled from sensors module via main)
 float intTemperature = 0.0f;
 float intHumidity = 0.0f;
@@ -83,9 +85,6 @@ bool fetchForecast() {
     return false;
   }
 
-  // Use legacy document types to keep API simple on ESP8266; suppress v7 deprecation noise locally.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   StaticJsonDocument<256> filter;
   JsonObject dailyFilter = filter["daily"].to<JsonObject>();
   dailyFilter["time"] = true;
@@ -97,7 +96,6 @@ bool fetchForecast() {
   DynamicJsonDocument doc(9000);
   WiFiClient* stream = https.getStreamPtr();
   DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
-#pragma GCC diagnostic pop
   https.end();
   if (err) {
     Serial.print("Forecast JSON error: ");
@@ -121,7 +119,7 @@ bool fetchForecast() {
   forecastCount = 0;
   for (int i = 0; i < 3; i++) forecast[i].valid = false;
 
-  // skip index 0 (днес), вземи следващите три дни ако са налични
+  // skip index 0 (today), take the next three days if available
   for (size_t src = 1; src < times.size() && forecastCount < 3; src++) {
     const char* t = times[src];
     if (!t) continue;
