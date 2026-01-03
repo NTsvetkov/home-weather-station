@@ -7,23 +7,24 @@
 #include "display.h"
 #include "sensors.h"
 
-unsigned long lastGaugeFetchMs = 0;
-unsigned long lastForecastFetchMs = 0;
+unsigned long lastGaugeFetchMs      = 0;
+unsigned long lastForecastFetchMs   = 0;
 unsigned long lastForecastSuccessMs = 0;
-unsigned long lastScreenSwitchMs = 0;
+unsigned long lastScreenSwitchMs    = 0;
 unsigned long currentScreenDuration = 0;
-unsigned long lastIntReadMs = 0;
-bool showMainScreen = true;
-bool needRedraw = true;
+unsigned long lastIntReadMs         = 0;
+bool showMainScreen                 = true;
+bool needRedraw                     = true;
 
-const unsigned long GAUGE_FETCH_INTERVAL = 180000;         // 3 min for live readings
-const unsigned long FORECAST_FETCH_INTERVAL = 3600000;     // 1 hour for forecast
-const unsigned long FORECAST_RETRY_INTERVAL = 300000;      // 5 min retry when missing
-const unsigned long MAIN_SCREEN_DURATION = 10000;          // 10s
+const unsigned long GAUGE_FETCH_INTERVAL     = 180000;     // 3 min for live readings
+const unsigned long FORECAST_FETCH_INTERVAL  = 3600000;    // 1 hour for forecast
+const unsigned long FORECAST_RETRY_INTERVAL  = 300000;     // 5 min retry when missing
+const unsigned long MAIN_SCREEN_DURATION     = 10000;      // 10s
 const unsigned long FORECAST_SCREEN_DURATION = 10000;      // 10s
-const unsigned long INTERNAL_READ_INTERVAL = 2000;         // read AHT20 every 2s
+const unsigned long INTERNAL_READ_INTERVAL   = 2000;       // read AHT20 every 2s
+
 const float TEMP_DELTA = 0.2f;                             // trigger redraw if temp changes >=0.2C
-const float HUM_DELTA = 1.0f;                              // trigger redraw if humidity changes >=1%
+const float HUM_DELTA  = 1.0f;                             // trigger redraw if humidity changes >=1%
 
 void setup() {
   Serial.begin(115200);
@@ -42,13 +43,13 @@ void setup() {
   initDisplay();
   initSensors();
 
-  lastGaugeFetchMs = 0;
-  lastForecastFetchMs = 0;
+  lastGaugeFetchMs      = 0;
+  lastForecastFetchMs   = 0;
   lastForecastSuccessMs = 0;
-  lastScreenSwitchMs = millis();
-  lastIntReadMs = 0;
+  lastScreenSwitchMs    = millis();
+  lastIntReadMs         = 0;
   currentScreenDuration = MAIN_SCREEN_DURATION;
-  needRedraw = true;
+  needRedraw            = true;
 }
 
 void loop() {
@@ -57,18 +58,18 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     // Safety: read internal sensor even if gauge fetch fails, but rate-limit and add change threshold
     if (now - lastIntReadMs >= INTERNAL_READ_INTERVAL) {
-      lastIntReadMs = now;
       float t, h;
+      lastIntReadMs = now;
       bool sensorOk = readInternalSensor(t, h);
       if (sensorOk) {
-        bool updated = (!haveIntData) || fabsf(t - intTemperature) >= TEMP_DELTA || fabsf(h - intHumidity) >= HUM_DELTA;
+        bool updated   = (!haveIntData) || fabsf(t - intTemperature) >= TEMP_DELTA || fabsf(h - intHumidity) >= HUM_DELTA;
         intTemperature = t;
-        intHumidity = h;
-        haveIntData = true;
+        intHumidity    = h;
+        haveIntData    = true;
         if (updated) needRedraw = true;
       } else if (haveIntData) {
         haveIntData = false;
-        needRedraw = true;
+        needRedraw  = true;
       }
     }
 
@@ -83,17 +84,17 @@ void loop() {
       Serial.println("Forecast fetch attempt");
       if (fetchForecast()) {
         lastForecastSuccessMs = now;
-        needRedraw = true;
+        needRedraw            = true;
       }
       lastForecastFetchMs = now;
     }
   }
 
   if (now - lastScreenSwitchMs >= currentScreenDuration) {
-    showMainScreen = !showMainScreen;
-    lastScreenSwitchMs = now;
+    showMainScreen        = !showMainScreen;
+    lastScreenSwitchMs    = now;
     currentScreenDuration = showMainScreen ? MAIN_SCREEN_DURATION : FORECAST_SCREEN_DURATION;
-    needRedraw = true;
+    needRedraw            = true;
   }
 
   if (needRedraw) {
@@ -105,5 +106,5 @@ void loop() {
     needRedraw = false;
   }
 
-  delay(50);
+  delay(500); // slow down loop; external data is minutes apart and internal changes slowly
 }
