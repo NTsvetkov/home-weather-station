@@ -2,7 +2,25 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <math.h>
+#include <cstring>
+
+// Local secrets are expected in src/config.h (ignored by git).
+// CI/builds without secrets should still compile, so fall back to config.example.h.
+#if defined(__has_include)
+#if __has_include("config.h")
 #include "config.h"
+#elif __has_include("config.example.h")
+#include "config.example.h"
+#endif
+#endif
+
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+
+#ifndef WIFI_PASS
+#define WIFI_PASS ""
+#endif
 #include "data.h"
 #include "display.h"
 #include "sensors.h"
@@ -30,15 +48,23 @@ void setup() {
   Serial.begin(115200);
   Serial.println("ILI9341 and AHT20 Test!");
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  const char* ssid = WIFI_SSID;
+  const char* pass = WIFI_PASS;
+  const bool haveWifiCreds = (ssid != nullptr) && (ssid[0] != '\0') && (std::strcmp(ssid, "your-ssid") != 0);
 
-  Serial.print("Свързване към WiFi...");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  WiFi.mode(WIFI_STA);
+  if (haveWifiCreds) {
+    WiFi.begin(ssid, pass);
+
+    Serial.print("Свързване към WiFi...");
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println(" свързано!");
+  } else {
+    Serial.println("WiFi: няма конфигурация (config.h липсва или е примерен) -> пропускам свързване");
   }
-  Serial.println(" свързано!");
 
   initDisplay();
   initSensors();
