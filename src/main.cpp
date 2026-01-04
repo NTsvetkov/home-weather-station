@@ -1,4 +1,3 @@
-
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <math.h>
@@ -21,6 +20,7 @@
 #ifndef WIFI_PASS
 #define WIFI_PASS ""
 #endif
+
 #include "data.h"
 #include "display.h"
 #include "sensors.h"
