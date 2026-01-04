@@ -38,7 +38,6 @@ static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudM
   return ICON_CLOUDY;
 }
 
-
 #define TFT_CS    D8
 #define TFT_RST   D3
 #define TFT_DC    D4
@@ -169,12 +168,15 @@ static void drawWindLabel(int colLeft, int colRight, int y, const String& text) 
 }
 
 // Format large temperature values so they always fit in the main screen cells.
-// - For |T| < 10 -> 1 decimal (e.g. -3.2)
-// - Otherwise -> no decimals (e.g. -12, 11)
+// - For t <= 10 -> no decimals (e.g. -12, 11)
 static String formatBigTemp(float t) {
-  if (fabs(t) < 10.0f) return String(t, 1);
+  if (t < -10.0f) {
+    // Very cold: show as integer to save space
+    return String((int)roundf(t));
+  }
 
-  return String((int)roundf(t));
+  // All other values: show one decimal
+  return String(t, 1);
 }
 
 // Forward declaration (used before the definition further below)
@@ -216,26 +218,26 @@ void drawWeatherIcon(int centerX, int topY, DayIcon icon) {
   bool isPartly  = (icon == ICON_PARTLY);
   bool isCloudy  = (icon == ICON_CLOUDY || isRain || isSnow || isThunder || isPartly);
   // sun / partly cloudy sun
-if (isClear || isPartly) {
-  // For "partly" icons move the sun a bit more to the left/up so it peeks out clearly.
-  int sunX = isPartly ? (centerX - 20) : centerX;
-  int sunY = isPartly ? (baseY - 9) : (baseY - 6);
-  // Make the sun a bit larger for "partly" so it remains clearly visible.
-  int sunR = isPartly ? 14 : 16;
-  tft.fillCircle(sunX, sunY, sunR, ILI9341_YELLOW);
-  for (int i = 0; i < 8; i++) {
-    float angle = i * PI / 4;
-    int x1 = sunX + cos(angle) * (sunR + 5);
-    int y1 = sunY + sin(angle) * (sunR + 6);
-    int x2 = sunX + cos(angle) * (sunR + 11);
-    int y2 = sunY + sin(angle) * (sunR + 11);
-    // Thicker rays (draw twice with a 1px offset)
-    tft.drawLine(x1, y1, x2, y2, ILI9341_YELLOW);
-    tft.drawLine(x1 + 1, y1, x2 + 1, y2, ILI9341_YELLOW);
+  if (isClear || isPartly) {
+    // For "partly" icons move the sun a bit more to the left/up so it peeks out clearly.
+    int sunX = isPartly ? (centerX - 20) : centerX;
+    int sunY = isPartly ? (baseY - 9) : (baseY - 6);
+    // Make the sun a bit larger for "partly" so it remains clearly visible.
+    int sunR = isPartly ? 14 : 16;
+    tft.fillCircle(sunX, sunY, sunR, ILI9341_YELLOW);
+    for (int i = 0; i < 8; i++) {
+      float angle = i * PI / 4;
+      int x1 = sunX + cos(angle) * (sunR + 5);
+      int y1 = sunY + sin(angle) * (sunR + 6);
+      int x2 = sunX + cos(angle) * (sunR + 11);
+      int y2 = sunY + sin(angle) * (sunR + 11);
+      // Thicker rays (draw twice with a 1px offset)
+      tft.drawLine(x1, y1, x2, y2, ILI9341_YELLOW);
+      tft.drawLine(x1 + 1, y1, x2 + 1, y2, ILI9341_YELLOW);
+    }
+    if (isClear) return;
+    // if partly cloudy -> continue and draw cloud on top
   }
-  if (isClear) return;
-  // if partly cloudy -> continue and draw cloud on top
-}
 
   // cloud base
   if (isCloudy || isRain || isSnow || isThunder) {
@@ -293,9 +295,9 @@ static void drawTrendIndicator(int x, int y, int8_t trend) {
 void drawMainScreen() {
   tft.fillScreen(ILI9341_BLACK);
 
-  const int leftCenterX = tft.width() / 4;
+  const int leftCenterX  = tft.width() / 4;
   const int rightCenterX = (tft.width() * 3) / 4;
-  
+
   const int labelY    = 8;
   const int tempY     = 48;
   const int humidityY = 130;

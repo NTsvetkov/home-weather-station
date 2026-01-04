@@ -11,7 +11,7 @@
 // We expect it as a macro (so every translation unit sees the same value).
 // If it's missing, keep a safe default.
 #ifndef TREND_WINDOW_MINUTES
-#define TREND_WINDOW_MINUTES 30
+#define TREND_WINDOW_MINUTES 10
 #endif
 
 // External readings
@@ -163,6 +163,7 @@ bool fetchForecast() {
 
     return false;
   }
+
   https.useHTTP10(true); // avoid chunked/gzip surprises on ESP8266
   https.addHeader("Accept-Encoding", "identity");
 
@@ -183,10 +184,11 @@ bool fetchForecast() {
   dailyFilter["precipitation_sum"]  = true;
   dailyFilter["wind_speed_10m_max"] = true;
   dailyFilter["cloud_cover_mean"]   = true;
-DynamicJsonDocument doc(9000);
-  WiFiClient* stream = https.getStreamPtr();
+  DynamicJsonDocument doc(13000);
+  WiFiClient* stream       = https.getStreamPtr();
   DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
   https.end();
+
   if (err) {
     Serial.print("Forecast JSON error: ");
     Serial.println(err.c_str());
@@ -202,7 +204,7 @@ DynamicJsonDocument doc(9000);
   JsonArray windArr   = doc["daily"]["wind_speed_10m_max"].as<JsonArray>();
   JsonArray cloudArr  = doc["daily"]["cloud_cover_mean"].as<JsonArray>();
 
-if (!times || !codes || !tMaxArr || !tMinArr || !precipArr || !windArr || !cloudArr) {
+  if (!times || !codes || !tMaxArr || !tMinArr || !precipArr || !windArr || !cloudArr) {
     Serial.println("Forecast arrays missing");
 
     return false;
