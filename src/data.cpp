@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "data.h"
+#include "debug.h"
 
 // Trend window is configured in config.h (minutes).
 // We expect it as a macro (so every translation unit sees the same value).
@@ -41,24 +42,40 @@ float intHumidity    = 0.0f;
 ForecastDay forecast[3];
 int forecastCount = 0;
 
-// --- Outdoor trend history (simple ring buffer) ---
+/* -------------------------------------------------------------------------- */
+/*                         Outdoor Trend History                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief A single timestamped sample of outdoor readings.
+ */
 struct ExtSample {
-  uint32_t ms;
-  float t;
-  float h;
-  float p;
+  uint32_t ms;  ///< millis() timestamp
+  float t;      ///< temperature (C)
+  float h;      ///< humidity (%)
+  float p;      ///< pressure (hPa)
 };
 
-static ExtSample extHist[16];
+static ExtSample extHist[8];
 static uint8_t extHistCount = 0;
-static uint8_t extHistHead  = 0; // next write index
+static uint8_t extHistHead  = 0;
 
+/**
+ * @brief Push a new outdoor sample into the ring buffer.
+ */
 static void pushExtSample(float t, float h, float p) {
   extHist[extHistHead] = { millis(), t, h, p };
   extHistHead = (extHistHead + 1) % (uint8_t)(sizeof(extHist) / sizeof(extHist[0]));
   if (extHistCount < (uint8_t)(sizeof(extHist) / sizeof(extHist[0]))) extHistCount++;
 }
 
+/**
+ * @brief Find a reference sample that is at least windowMs old.
+ * @param[in]  nowMs    Current millis() value.
+ * @param[in]  windowMs Minimum age in milliseconds.
+ * @param[out] out      The found sample.
+ * @return true if a suitable sample was found.
+ */
 static bool findRefSample(uint32_t nowMs, uint32_t windowMs, ExtSample& out) {
   if (extHistCount < 2) return false;
 
@@ -84,6 +101,10 @@ static bool findRefSample(uint32_t nowMs, uint32_t windowMs, ExtSample& out) {
   return true;
 }
 
+/**
+ * @brief Calculate trend direction based on delta and threshold.
+ * @return -1 (falling), 0 (steady), or +1 (rising).
+ */
 static int8_t calcTrend(float current, float ref, float threshold) {
   float d = current - ref;
 
@@ -155,6 +176,9 @@ static bool parseGaugeCsv(const String& payload, float& outTemp, float& outPress
   return gotTemp && gotPress && gotHum;
 }
 
+/**
+ * @brief Update outdoor trend indicators from history buffer.
+ */
 static void updateExtTrends() {
   const uint32_t windowMs = (uint32_t)TREND_WINDOW_MINUTES * 60UL * 1000UL;
   ExtSample ref;
@@ -172,25 +196,24 @@ static void updateExtTrends() {
 }
 
 /**
- * @brief Fetch and parse outdoor readings from meter.ac.
+ * @brief Fetch and parse outdoor readings from meter.ac gauge endpoint.
+ * @return true if data was successfully fetched and parsed.
  */
 bool fetchGaugeData() {
   WiFiClientSecure client;
   client.setInsecure();
 
   HTTPClient https;
-  https.setTimeout(7000);
-  if (!https.begin(client, "https://meter.ac/gs/nodes/N200/gauge.txt")) {
-    Serial.println("Gauge begin() failed");
-
+  https.setTimeout(CFG_GAUGE_HTTP_TIMEOUT_MS);
+  if (!https.begin(client, CFG_GAUGE_URL)) {
+    LOG_E("Gauge: begin() failed");
     return false;
   }
 
   int httpCode = https.GET();
   if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("Gauge HTTP code: %d\n", httpCode);
+    LOG_W("Gauge: HTTP %d", httpCode);
     https.end();
-
     return false;
   }
 
@@ -201,8 +224,7 @@ bool fetchGaugeData() {
   float p = 0.0f;
   float h = 0.0f;
   if (!parseGaugeCsv(payload, t, p, h)) {
-    Serial.println("Gauge parse failed (csv)");
-
+    LOG_E("Gauge: CSV parse failed");
     return false;
   }
 
@@ -213,42 +235,41 @@ bool fetchGaugeData() {
 
   pushExtSample(extTemperature, extHumidity, extPressure);
   updateExtTrends();
-  Serial.println("Gauge fetch OK");
 
   return true;
 }
 
 /**
- * @brief Fetch daily forecast from Open-Meteo and fill forecast[] (tomorrow + next 2).
+ * @brief Fetch daily forecast from Open-Meteo API.
+ *
+ * Populates the global forecast[] array with the next 3 days
+ * (skipping today).
+ *
+ * @return true if at least one forecast day was parsed.
  */
 bool fetchForecast() {
   BearSSL::WiFiClientSecure client;
   client.setInsecure();
-  client.setBufferSizes(2048, 512);
+  client.setBufferSizes(CFG_TLS_RX_BUFFER_BYTES_FORECAST, CFG_TLS_TX_BUFFER_BYTES_FORECAST);
 
   HTTPClient https;
-  // Full request as provided (hourly included). We'll parse only daily parts but keep payload intact.
-  const char* url = "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,cloud_cover_mean&models=ecmwf_ifs&timezone=auto";
-
-  if (!https.begin(client, url)) {
-    Serial.println("Forecast begin() failed");
-
+  if (!https.begin(client, CFG_FORECAST_URL)) {
+    LOG_E("Forecast: begin() failed");
     return false;
   }
 
-  https.useHTTP10(true); // avoid chunked/gzip surprises on ESP8266
+  https.useHTTP10(true);
   https.addHeader("Accept-Encoding", "identity");
 
   int httpCode = https.GET();
   if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("Forecast HTTP code: %d\n", httpCode);
+    LOG_W("Forecast: HTTP %d", httpCode);
     https.end();
-
     return false;
   }
 
   StaticJsonDocument<256> filter;
-  JsonObject dailyFilter = filter["daily"].to<JsonObject>();
+  JsonObject dailyFilter            = filter["daily"].to<JsonObject>();
   dailyFilter["time"]               = true;
   dailyFilter["weather_code"]       = true;
   dailyFilter["temperature_2m_max"] = true;
@@ -256,15 +277,14 @@ bool fetchForecast() {
   dailyFilter["precipitation_sum"]  = true;
   dailyFilter["wind_speed_10m_max"] = true;
   dailyFilter["cloud_cover_mean"]   = true;
-  DynamicJsonDocument doc(13000);
+
+  DynamicJsonDocument doc(CFG_FORECAST_JSON_DOC_CAPACITY);
   WiFiClient* stream       = https.getStreamPtr();
   DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
   https.end();
 
   if (err) {
-    Serial.print("Forecast JSON error: ");
-    Serial.println(err.c_str());
-
+    LOG_E("Forecast: JSON error - %s", err.c_str());
     return false;
   }
 
@@ -277,21 +297,20 @@ bool fetchForecast() {
   JsonArray cloudArr  = doc["daily"]["cloud_cover_mean"].as<JsonArray>();
 
   if (!times || !codes || !tMaxArr || !tMinArr || !precipArr || !windArr || !cloudArr) {
-    Serial.println("Forecast arrays missing");
-
+    LOG_E("Forecast: missing arrays in response");
     return false;
   }
-
-  Serial.printf("Forecast days available: %u\n", times.size());
 
   forecastCount = 0;
   for (int i = 0; i < 3; i++) forecast[i].valid = false;
 
-  // skip index 0 (today), take the next three days if available
+  // Skip index 0 (today), take the next 3 days if available.
   for (size_t src = 1; src < times.size() && forecastCount < 3; src++) {
     const char* t = times[src];
     if (!t) continue;
-    forecast[forecastCount].label     = String(t);
+
+    strncpy(forecast[forecastCount].label, t, sizeof(forecast[forecastCount].label) - 1);
+    forecast[forecastCount].label[sizeof(forecast[forecastCount].label) - 1] = '\0';
     forecast[forecastCount].wmoCode   = codes[src].as<int>();
     forecast[forecastCount].tMax      = tMaxArr[src].as<float>();
     forecast[forecastCount].tMin      = tMinArr[src].as<float>();
@@ -302,5 +321,6 @@ bool fetchForecast() {
     forecastCount++;
   }
 
+  LOG_I("Forecast: %d days loaded", forecastCount);
   return forecastCount > 0;
 }

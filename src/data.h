@@ -5,7 +5,7 @@
  * @brief One day of forecast data (already post-processed for the UI).
  */
 struct ForecastDay {
-  String label;
+  char label[11];    // YYYY-MM-DD + NUL
   int wmoCode;       // WMO weather code (used only as a hint, e.g. thunderstorms)
   float tMin;
   float tMax;
