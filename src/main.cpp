@@ -41,10 +41,13 @@ unsigned long lastIntReadMs         = 0;
 bool showMainScreen                 = true;
 bool needRedraw                     = true;
 
-static String lastGaugeDate = "";
 static bool midnightForecastPending = false;
 static String lastNtpDate = "";
 
+/**
+ * @brief Get current local date as YYYY-MM-DD (based on NTP time + TZ rules).
+ * @return true if time is considered valid and out is set.
+ */
 static bool getLocalDateYYYYMMDD(String& out) {
   time_t t = time(nullptr);
   // Consider time valid only after a reasonable epoch (2021-01-01).
@@ -145,7 +148,7 @@ void loop() {
       }
     }
 
-    // Safety: read internal sensor even if gauge fetch fails, but rate-limit and add change threshold
+    // Read internal sensor even if gauge fetch fails (rate-limit + change threshold).
     if (now - lastIntReadMs >= INTERNAL_READ_INTERVAL) {
       float t, h;
       lastIntReadMs = now;
@@ -163,15 +166,7 @@ void loop() {
 
     if (!haveExtData || now - lastGaugeFetchMs >= GAUGE_FETCH_INTERVAL) {
       Serial.println("Gauge fetch attempt");
-      if (fetchGaugeData()) {
-        if (extDate.length() > 0) {
-          if (lastGaugeDate.length() > 0 && extDate != lastGaugeDate) {
-            // Day rollover detected -> refresh forecast immediately, regardless of the 1h interval.
-            midnightForecastPending = true;
-          }
-          lastGaugeDate = extDate;
-        }
-      }
+      fetchGaugeData();
       lastGaugeFetchMs = now;
     }
 

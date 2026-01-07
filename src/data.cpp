@@ -3,6 +3,8 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecureBearSSL.h>
 #include <ArduinoJson.h>
+#include <cstring>
+#include <stdlib.h>
 
 #include "config.h"
 #include "data.h"
@@ -14,13 +16,16 @@
 #define TREND_WINDOW_MINUTES 10
 #endif
 
+/**
+ * @file data.cpp
+ * @brief Networking + parsing for external (gauge/forecast) data.
+ */
+
 // External readings
 float extTemperature = 0.0f;
 float extHumidity    = 0.0f;
 float extPressure    = 0.0f;
 bool haveExtData     = false;
-
-String extDate = "";
 
 // Trend indicators
 int8_t extTempTrend  = 0;
@@ -88,50 +93,65 @@ static int8_t calcTrend(float current, float ref, float threshold) {
   return 0;
 }
 
-static bool extractDateYYYYMMDD(const String& s, String& out) {
-  // Look for ISO date pattern: YYYY-MM-DD
-  for (int i = 0; i + 10 <= (int)s.length(); i++) {
-    char c0 = s[i + 0];
-    char c1 = s[i + 1];
-    char c2 = s[i + 2];
-    char c3 = s[i + 3];
-    char c4 = s[i + 4];
-    char c5 = s[i + 5];
-    char c6 = s[i + 6];
-    char c7 = s[i + 7];
-    char c8 = s[i + 8];
-    char c9 = s[i + 9];
+/**
+ * @brief Parse float from a span (non-null-terminated) substring.
+ *
+ * Copies the span into a small temporary buffer, then uses strtof().
+ */
+static bool parseFloatSpan(const char* start, size_t len, float& out) {
+  // Copy into a small buffer to use strtof safely.
+  // Values in gauge.txt are short (e.g. "-12.3").
+  if (len == 0) return false;
+  if (len >= 32) len = 31;
+  char buf[32];
+  memcpy(buf, start, len);
+  buf[len] = '\0';
 
-    if (isDigit(c0) && isDigit(c1) && isDigit(c2) && isDigit(c3) && c4 == '-' && isDigit(c5) && isDigit(c6) && c7 == '-' && isDigit(c8) && isDigit(c9)) {
-      out = s.substring(i, i + 10);
-      return true;
+  char* endptr = nullptr;
+  out = strtof(buf, &endptr);
+  return endptr != buf;
+}
+
+/**
+ * @brief Parse gauge CSV payload.
+ *
+ * Mapping (kept compatible with previous implementation):
+ * - field0 = timestamp
+ * - field1 = temperature
+ * - field4 = pressure
+ * - field5 = humidity
+ */
+static bool parseGaugeCsv(const String& payload, float& outTemp, float& outPress, float& outHum) {
+  // Expected mapping from existing code:
+  // field0 = timestamp, field1 = temperature, field4 = pressure, field5 = humidity
+  const char* s          = payload.c_str();
+  const char* fieldStart = s;
+  int field              = 0;
+
+  bool gotTemp  = false;
+  bool gotPress = false;
+  bool gotHum   = false;
+
+  for (const char* p = s;; p++) {
+    char c     = *p;
+    bool atEnd = (c == '\0' || c == '\n' || c == '\r');
+    if (c == ',' || atEnd) {
+      size_t fieldLen = (size_t)(p - fieldStart);
+      if (field == 1) {
+        gotTemp = parseFloatSpan(fieldStart, fieldLen, outTemp);
+      } else if (field == 4) {
+        gotPress = parseFloatSpan(fieldStart, fieldLen, outPress);
+      } else if (field == 5) {
+        gotHum = parseFloatSpan(fieldStart, fieldLen, outHum);
+      }
+
+      if (atEnd) break;
+      field++;
+      fieldStart = p + 1;
     }
   }
 
-  // Alternative pattern: DD.MM.YYYY or DD/MM/YYYY -> normalize to YYYY-MM-DD
-  for (int i = 0; i + 10 <= (int)s.length(); i++) {
-    char d0   = s[i + 0];
-    char d1   = s[i + 1];
-    char sep1 = s[i + 2];
-    char m0   = s[i + 3];
-    char m1   = s[i + 4];
-    char sep2 = s[i + 5];
-    char y0   = s[i + 6];
-    char y1   = s[i + 7];
-    char y2   = s[i + 8];
-    char y3   = s[i + 9];
-
-    bool sepsOk = (sep1 == '.' || sep1 == '/') && (sep2 == '.' || sep2 == '/');
-    if (isDigit(d0) && isDigit(d1) && sepsOk && isDigit(m0) && isDigit(m1) && isDigit(y0) && isDigit(y1) && isDigit(y2) && isDigit(y3)) {
-      String dd = s.substring(i, i + 2);
-      String mm = s.substring(i + 3, i + 5);
-      String yyyy = s.substring(i + 6, i + 10);
-      out = yyyy + "-" + mm + "-" + dd;
-      return true;
-    }
-  }
-
-  return false;
+  return gotTemp && gotPress && gotHum;
 }
 
 static void updateExtTrends() {
@@ -150,6 +170,9 @@ static void updateExtTrends() {
   extPressTrend = calcTrend(extPressure, ref.p, 0.8f);
 }
 
+/**
+ * @brief Fetch and parse outdoor readings from meter.ac.
+ */
 bool fetchGaugeData() {
   WiFiClientSecure client;
   client.setInsecure();
@@ -173,31 +196,17 @@ bool fetchGaugeData() {
   String payload = https.getString();
   https.end();
 
-  int commaIndex1 = payload.indexOf(',');
-  int commaIndex2 = payload.indexOf(',', commaIndex1 + 1);
-  int commaIndex3 = payload.indexOf(',', commaIndex2 + 1);
-  int commaIndex4 = payload.indexOf(',', commaIndex3 + 1);
-  int commaIndex5 = payload.indexOf(',', commaIndex4 + 1);
-  int commaIndex6 = payload.indexOf(',', commaIndex5 + 1);
-
-  if (commaIndex1 < 0 || commaIndex2 < 0 || commaIndex3 < 0 || commaIndex4 < 0 || commaIndex5 < 0 || commaIndex6 < 0) {
-    Serial.println("Gauge parse failed (commas)");
+  float t = 0.0f;
+  float p = 0.0f;
+  float h = 0.0f;
+  if (!parseGaugeCsv(payload, t, p, h)) {
+    Serial.println("Gauge parse failed (csv)");
     return false;
   }
 
-  // First field is expected to include a date/time. If present, use it to detect day rollover.
-  // Examples we support: "YYYY-MM-DD ..." or "DD.MM.YYYY ...".
-  {
-    String firstField = payload.substring(0, commaIndex1);
-    String d;
-    if (extractDateYYYYMMDD(firstField, d)) {
-      extDate = d;
-    }
-  }
-
-  extTemperature = payload.substring(commaIndex1 + 1, commaIndex2).toFloat();
-  extHumidity    = payload.substring(commaIndex5 + 1, commaIndex6).toFloat();
-  extPressure    = payload.substring(commaIndex4 + 1, commaIndex5).toFloat();
+  extTemperature = t;
+  extPressure    = p;
+  extHumidity    = h;
   haveExtData    = true;
 
   pushExtSample(extTemperature, extHumidity, extPressure);
@@ -207,6 +216,9 @@ bool fetchGaugeData() {
   return true;
 }
 
+/**
+ * @brief Fetch daily forecast from Open-Meteo and fill forecast[] (tomorrow + next 2).
+ */
 bool fetchForecast() {
   BearSSL::WiFiClientSecure client;
   client.setInsecure();

@@ -1,8 +1,19 @@
 #include <Arduino.h>
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
+
 #include "display.h"
 #include "data.h"
+
+/**
+ * @file display.cpp
+ * @brief TFT UI rendering (main screen + forecast screen).
+ */
+
+/**
+ * @brief Icon bucket for forecast rendering.
+ */
 enum DayIcon {
   ICON_SUN,
   ICON_PARTLY,
@@ -13,8 +24,11 @@ enum DayIcon {
   ICON_STORM
 };
 
-// Choose a daily icon based on precipitation / temperature / cloud cover.
-// Wind is handled separately as a badge in the UI.
+/**
+ * @brief Choose a daily icon based on precipitation / temperature / cloud cover.
+ *
+ * Wind is handled separately as a label in the UI.
+ */
 static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudMean, int wmoCode) {
   // Thunderstorms: allow WMO to override
   if (wmoCode == 95 || wmoCode == 96 || wmoCode == 99) return ICON_STORM;
@@ -44,6 +58,11 @@ static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudM
 
 static Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
+/**
+ * @brief Convert UTF-8 string to a byte sequence supported by the current font.
+ *
+ * Historical helper kept for Cyrillic text rendering.
+ */
 String utf8rus(String source) {
   int i, k;
   String target;
@@ -51,7 +70,8 @@ String utf8rus(String source) {
   unsigned char n;
   char m[2] = { '0', '\0' };
 
-  k = source.length(); i = 0;
+  k = source.length();
+  i = 0;
 
   while (i < k) {
     n = source[i]; i++;
@@ -78,6 +98,7 @@ String utf8rus(String source) {
   return target;
 }
 
+/** @brief Pick a UI color for a temperature value (C). */
 uint16_t colorForTemperature(float tempC) {
   if (tempC < 10) return ILI9341_CYAN;
   if (tempC < 18) return ILI9341_BLUE;
@@ -87,6 +108,7 @@ uint16_t colorForTemperature(float tempC) {
   return ILI9341_RED;
 }
 
+/** @brief Pick a UI color for a humidity value (%). */
 uint16_t colorForHumidity(float humidity) {
   if (humidity < 30) return ILI9341_CYAN;
   if (humidity < 40) return ILI9341_BLUE;
@@ -122,6 +144,7 @@ String labelForDate(const String& dateStr) {
   return String(dowBg[dow]) + " " + dd;
 }
 
+/** @brief Draw text centered around centerX. */
 void drawCenteredText(const String& text, int centerX, int y, uint8_t size, uint16_t color) {
   int16_t x1, y1;
   uint16_t w, h;
@@ -133,6 +156,7 @@ void drawCenteredText(const String& text, int centerX, int y, uint8_t size, uint
   tft.print(text);
 }
 
+/** @brief Draw text right-aligned to rightX. */
 void drawRightAlignedText(const String& text, int rightX, int y, uint8_t size, uint16_t color) {
   int16_t x1, y1;
   uint16_t w, h;
@@ -144,8 +168,10 @@ void drawRightAlignedText(const String& text, int rightX, int y, uint8_t size, u
   tft.print(text);
 }
 
-// Compact wind label (auto-shrinks to fit in the forecast column).
-// Example text: "10 km"
+/**
+ * @brief Compact wind label (auto-shrinks to fit in the forecast column).
+ * @param text Example: "10 km"
+ */
 static void drawWindLabel(int colLeft, int colRight, int y, const String& text) {
   const int colW = colRight - colLeft;
   // Keep it small so it never dominates the forecast column.
@@ -167,8 +193,9 @@ static void drawWindLabel(int colLeft, int colRight, int y, const String& text) 
   tft.print(text);
 }
 
-// Format large temperature values so they always fit in the main screen cells.
-// - For t <= 10 -> no decimals (e.g. -12, 11)
+/**
+ * @brief Format large temperature values so they always fit in the main screen cells.
+ */
 static String formatBigTemp(float t) {
   if (t < -10.0f) {
     // Very cold: show as integer to save space
@@ -275,7 +302,7 @@ void drawWeatherIcon(int centerX, int topY, DayIcon icon) {
   }
 }
 
-// Small triangle indicator for trends (-1/0/+1)
+/** @brief Small triangle indicator for trends (-1/0/+1). */
 static void drawTrendIndicator(int x, int y, int8_t trend) {
   // Simple, compact triangles: up / right / down.
   // This avoids clashing with the grid lines and keeps the meaning obvious.
@@ -292,6 +319,7 @@ static void drawTrendIndicator(int x, int y, int8_t trend) {
   }
 }
 
+/** @brief Render the main readings screen. */
 void drawMainScreen() {
   tft.fillScreen(ILI9341_BLACK);
 
@@ -342,6 +370,7 @@ void drawMainScreen() {
   if (haveExtData) drawPressureBar(20, 190, extPressure);
 }
 
+/** @brief Render the forecast screen. */
 void drawForecastScreen() {
   tft.fillScreen(ILI9341_BLACK);
   drawCenteredText(utf8rus("прогноза"), tft.width() / 2, 4, 3, ILI9341_WHITE);

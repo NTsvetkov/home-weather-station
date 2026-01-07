@@ -1,6 +1,13 @@
 #include <Arduino.h>
+
 #include <Adafruit_AHTX0.h>
+
 #include "sensors.h"
+
+/**
+ * @file sensors.cpp
+ * @brief AHT20 sensor initialization and readings.
+ */
 
 static Adafruit_AHTX0 aht;
 
@@ -12,7 +19,6 @@ static const float AHT_HUMIDITY_MAX = 100.0f;
 bool initSensors() {
   if (!aht.begin()) {
     Serial.println("Не може да се намери AHT20! Проверете връзките.");
-
     return false;
   }
 
@@ -25,12 +31,12 @@ bool readInternalSensor(float& temperature, float& humidity) {
 
   const bool ok = isfinite(temp_event.temperature) &&
                   isfinite(humidity_event.relative_humidity) &&
-                  temp_event.temperature > AHT_TEMP_MIN && temp_event.temperature < AHT_TEMP_MAX &&
-                  humidity_event.relative_humidity >= AHT_HUMIDITY_MIN && humidity_event.relative_humidity <= AHT_HUMIDITY_MAX;
+                  temp_event.temperature > AHT_TEMP_MIN &&
+                  temp_event.temperature < AHT_TEMP_MAX &&
+                  humidity_event.relative_humidity >= AHT_HUMIDITY_MIN &&
+                  humidity_event.relative_humidity <= AHT_HUMIDITY_MAX;
 
-  if (!ok) {
-    return false;
-  }
+  if (!ok) return false;
 
   temperature = temp_event.temperature;
   humidity    = humidity_event.relative_humidity;
