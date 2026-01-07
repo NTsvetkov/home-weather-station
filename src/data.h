@@ -15,6 +15,8 @@ struct ForecastDay {
 extern float extTemperature;
 extern float extHumidity;
 extern float extPressure;
+// Date (YYYY-MM-DD) extracted from the gauge payload if available.
+extern String extDate;
 extern float intTemperature;
 extern float intHumidity;
 extern bool haveExtData;

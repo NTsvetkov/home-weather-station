@@ -203,7 +203,7 @@ void drawPressureBar(int x, int y, float pressure) {
   tft.print(pStr);
 
   // Pressure trend indicator (next to the text)
-  drawTrendIndicator(textX + w + 8, y + 28, extPressTrend);
+  drawTrendIndicator(textX + w + 8, y + 32, extPressTrend);
 }
 
 void drawWeatherIcon(int centerX, int topY, DayIcon icon) {
@@ -316,11 +316,11 @@ void drawMainScreen() {
   drawCenteredText(utf8rus("навън"), leftCenterX, labelY, 3, ILI9341_WHITE);
   if (haveExtData) {
     // Format so values like -10.0, 12.3 always fit in the cell
-    drawCenteredText(formatBigTemp(extTemperature), leftCenterX, tempY, 6, colorForTemperature(extTemperature));
+    drawCenteredText(formatBigTemp(extTemperature), leftCenterX + 5, tempY, 6, colorForTemperature(extTemperature));
 
     // Trend indicator: keep it near the left edge so it doesn't clash with the right-aligned numbers.
     const int triX = 6;
-    drawTrendIndicator(triX, tempY + 44, extTempTrend);
+    drawTrendIndicator(triX, tempY + 48, extTempTrend);
 
     // External humidity: right aligned, with the trend triangle under it.
     const int extHumY = humidityY - 4;
@@ -333,7 +333,7 @@ void drawMainScreen() {
   drawCenteredText(utf8rus("вътре"), rightCenterX, labelY, 3, ILI9341_WHITE);
   if (haveIntData) {
     // Keep indoor temperature formatting as before (no need for negative-fit logic here)
-    drawCenteredText(String(intTemperature, 1), rightCenterX, tempY, 6, colorForTemperature(intTemperature));
+    drawCenteredText(String(intTemperature, 1), rightCenterX + 5, tempY, 6, colorForTemperature(intTemperature));
     drawCenteredText(String(intHumidity, 0) + " %", rightCenterX, humidityY, 4, colorForHumidity(intHumidity));
   } else {
     drawCenteredText(utf8rus("няма данни"), rightCenterX, tempY, 3, ILI9341_YELLOW);
@@ -366,7 +366,7 @@ void drawForecastScreen() {
     String maxStr  = String(forecast[i].tMax, 1) + " C";
     String minStr  = String(forecast[i].tMin, 1) + " C";
     int rainLiters = (int)(forecast[i].precip + 0.5f);
-    String rainStr = String(rainLiters) + " L";
+    String rainStr = String(rainLiters) + utf8rus(" Л");
 
     // Numbers a bit higher to free space for a readable wind badge
     drawRightAlignedText(maxStr, colRight, 146, 2, ILI9341_WHITE);
@@ -379,7 +379,7 @@ void drawForecastScreen() {
     drawRightAlignedText(rainStr, colRight, rainY - 6, 2, ILI9341_BLUE);
 
     // Wind (compact): e.g. "10 km". Auto-shrinks if needed.
-    String windStr = String((int)(forecast[i].windMax + 0.5f)) + " km";
+    String windStr = String((int)(forecast[i].windMax + 0.5f)) + utf8rus(" кмч");
     drawWindLabel(colStart + 6, colRight, 212, windStr);
 
   }

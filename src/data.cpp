@@ -20,6 +20,8 @@ float extHumidity    = 0.0f;
 float extPressure    = 0.0f;
 bool haveExtData     = false;
 
+String extDate = "";
+
 // Trend indicators
 int8_t extTempTrend  = 0;
 int8_t extHumTrend   = 0;
@@ -86,6 +88,52 @@ static int8_t calcTrend(float current, float ref, float threshold) {
   return 0;
 }
 
+static bool extractDateYYYYMMDD(const String& s, String& out) {
+  // Look for ISO date pattern: YYYY-MM-DD
+  for (int i = 0; i + 10 <= (int)s.length(); i++) {
+    char c0 = s[i + 0];
+    char c1 = s[i + 1];
+    char c2 = s[i + 2];
+    char c3 = s[i + 3];
+    char c4 = s[i + 4];
+    char c5 = s[i + 5];
+    char c6 = s[i + 6];
+    char c7 = s[i + 7];
+    char c8 = s[i + 8];
+    char c9 = s[i + 9];
+
+    if (isDigit(c0) && isDigit(c1) && isDigit(c2) && isDigit(c3) && c4 == '-' && isDigit(c5) && isDigit(c6) && c7 == '-' && isDigit(c8) && isDigit(c9)) {
+      out = s.substring(i, i + 10);
+      return true;
+    }
+  }
+
+  // Alternative pattern: DD.MM.YYYY or DD/MM/YYYY -> normalize to YYYY-MM-DD
+  for (int i = 0; i + 10 <= (int)s.length(); i++) {
+    char d0   = s[i + 0];
+    char d1   = s[i + 1];
+    char sep1 = s[i + 2];
+    char m0   = s[i + 3];
+    char m1   = s[i + 4];
+    char sep2 = s[i + 5];
+    char y0   = s[i + 6];
+    char y1   = s[i + 7];
+    char y2   = s[i + 8];
+    char y3   = s[i + 9];
+
+    bool sepsOk = (sep1 == '.' || sep1 == '/') && (sep2 == '.' || sep2 == '/');
+    if (isDigit(d0) && isDigit(d1) && sepsOk && isDigit(m0) && isDigit(m1) && isDigit(y0) && isDigit(y1) && isDigit(y2) && isDigit(y3)) {
+      String dd = s.substring(i, i + 2);
+      String mm = s.substring(i + 3, i + 5);
+      String yyyy = s.substring(i + 6, i + 10);
+      out = yyyy + "-" + mm + "-" + dd;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 static void updateExtTrends() {
   const uint32_t windowMs = (uint32_t)TREND_WINDOW_MINUTES * 60UL * 1000UL;
   ExtSample ref;
@@ -135,6 +183,16 @@ bool fetchGaugeData() {
   if (commaIndex1 < 0 || commaIndex2 < 0 || commaIndex3 < 0 || commaIndex4 < 0 || commaIndex5 < 0 || commaIndex6 < 0) {
     Serial.println("Gauge parse failed (commas)");
     return false;
+  }
+
+  // First field is expected to include a date/time. If present, use it to detect day rollover.
+  // Examples we support: "YYYY-MM-DD ..." or "DD.MM.YYYY ...".
+  {
+    String firstField = payload.substring(0, commaIndex1);
+    String d;
+    if (extractDateYYYYMMDD(firstField, d)) {
+      extDate = d;
+    }
   }
 
   extTemperature = payload.substring(commaIndex1 + 1, commaIndex2).toFloat();
