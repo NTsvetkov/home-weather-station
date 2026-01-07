@@ -42,7 +42,7 @@ bool showMainScreen                 = true;
 bool needRedraw                     = true;
 
 static bool midnightForecastPending = false;
-static String lastNtpDate = "";
+static String lastNtpDate           = "";
 
 /**
  * @brief Get current local date as YYYY-MM-DD (based on NTP time + TZ rules).
@@ -62,6 +62,7 @@ static bool getLocalDateYYYYMMDD(String& out) {
   }
 
   out = String(buf);
+
   return true;
 }
 

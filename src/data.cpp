@@ -108,7 +108,8 @@ static bool parseFloatSpan(const char* start, size_t len, float& out) {
   buf[len] = '\0';
 
   char* endptr = nullptr;
-  out = strtof(buf, &endptr);
+  out          = strtof(buf, &endptr);
+
   return endptr != buf;
 }
 
@@ -201,6 +202,7 @@ bool fetchGaugeData() {
   float h = 0.0f;
   if (!parseGaugeCsv(payload, t, p, h)) {
     Serial.println("Gauge parse failed (csv)");
+
     return false;
   }
 
