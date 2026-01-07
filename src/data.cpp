@@ -6,7 +6,17 @@
 #include <cstring>
 #include <stdlib.h>
 
-#include "config.h"
+// Local config (gitignored) or example fallback for CI.
+#if defined(__has_include)
+  #if __has_include("config.h")
+    #include "config.h"
+  #elif __has_include("config.example.h")
+    #include "config.example.h"
+  #endif
+#else
+  #include "config.h"
+#endif
+
 #include "data.h"
 #include "debug.h"
 
