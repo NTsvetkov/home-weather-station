@@ -3,6 +3,8 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecureBearSSL.h>
 #include <ArduinoJson.h>
+#include <cstring>
+#include <stdlib.h>
 
 #include "config.h"
 #include "data.h"
@@ -13,6 +15,11 @@
 #ifndef TREND_WINDOW_MINUTES
 #define TREND_WINDOW_MINUTES 10
 #endif
+
+/**
+ * @file data.cpp
+ * @brief Networking + parsing for external (gauge/forecast) data.
+ */
 
 // External readings
 float extTemperature = 0.0f;
@@ -86,6 +93,68 @@ static int8_t calcTrend(float current, float ref, float threshold) {
   return 0;
 }
 
+/**
+ * @brief Parse float from a span (non-null-terminated) substring.
+ *
+ * Copies the span into a small temporary buffer, then uses strtof().
+ */
+static bool parseFloatSpan(const char* start, size_t len, float& out) {
+  // Copy into a small buffer to use strtof safely.
+  // Values in gauge.txt are short (e.g. "-12.3").
+  if (len == 0) return false;
+  if (len >= 32) len = 31;
+  char buf[32];
+  memcpy(buf, start, len);
+  buf[len] = '\0';
+
+  char* endptr = nullptr;
+  out          = strtof(buf, &endptr);
+
+  return endptr != buf;
+}
+
+/**
+ * @brief Parse gauge CSV payload.
+ *
+ * Mapping (kept compatible with previous implementation):
+ * - field0 = timestamp
+ * - field1 = temperature
+ * - field4 = pressure
+ * - field5 = humidity
+ */
+static bool parseGaugeCsv(const String& payload, float& outTemp, float& outPress, float& outHum) {
+  // Expected mapping from existing code:
+  // field0 = timestamp, field1 = temperature, field4 = pressure, field5 = humidity
+  const char* s          = payload.c_str();
+  const char* fieldStart = s;
+  int field              = 0;
+
+  bool gotTemp  = false;
+  bool gotPress = false;
+  bool gotHum   = false;
+
+  for (const char* p = s;; p++) {
+    char c     = *p;
+    bool atEnd = (c == '\0' || c == '\n' || c == '\r');
+    if (c == ',' || atEnd) {
+      size_t fieldLen = (size_t)(p - fieldStart);
+      if (field == 1) {
+        gotTemp = parseFloatSpan(fieldStart, fieldLen, outTemp);
+      } else if (field == 4) {
+        gotPress = parseFloatSpan(fieldStart, fieldLen, outPress);
+      } else if (field == 5) {
+        gotHum = parseFloatSpan(fieldStart, fieldLen, outHum);
+      }
+
+      if (atEnd) break;
+      field++;
+      fieldStart = p + 1;
+    }
+  }
+
+  return gotTemp && gotPress && gotHum;
+}
+
 static void updateExtTrends() {
   const uint32_t windowMs = (uint32_t)TREND_WINDOW_MINUTES * 60UL * 1000UL;
   ExtSample ref;
@@ -102,6 +171,9 @@ static void updateExtTrends() {
   extPressTrend = calcTrend(extPressure, ref.p, 0.8f);
 }
 
+/**
+ * @brief Fetch and parse outdoor readings from meter.ac.
+ */
 bool fetchGaugeData() {
   WiFiClientSecure client;
   client.setInsecure();
@@ -125,21 +197,18 @@ bool fetchGaugeData() {
   String payload = https.getString();
   https.end();
 
-  int commaIndex1 = payload.indexOf(',');
-  int commaIndex2 = payload.indexOf(',', commaIndex1 + 1);
-  int commaIndex3 = payload.indexOf(',', commaIndex2 + 1);
-  int commaIndex4 = payload.indexOf(',', commaIndex3 + 1);
-  int commaIndex5 = payload.indexOf(',', commaIndex4 + 1);
-  int commaIndex6 = payload.indexOf(',', commaIndex5 + 1);
+  float t = 0.0f;
+  float p = 0.0f;
+  float h = 0.0f;
+  if (!parseGaugeCsv(payload, t, p, h)) {
+    Serial.println("Gauge parse failed (csv)");
 
-  if (commaIndex1 < 0 || commaIndex2 < 0 || commaIndex3 < 0 || commaIndex4 < 0 || commaIndex5 < 0 || commaIndex6 < 0) {
-    Serial.println("Gauge parse failed (commas)");
     return false;
   }
 
-  extTemperature = payload.substring(commaIndex1 + 1, commaIndex2).toFloat();
-  extHumidity    = payload.substring(commaIndex5 + 1, commaIndex6).toFloat();
-  extPressure    = payload.substring(commaIndex4 + 1, commaIndex5).toFloat();
+  extTemperature = t;
+  extPressure    = p;
+  extHumidity    = h;
   haveExtData    = true;
 
   pushExtSample(extTemperature, extHumidity, extPressure);
@@ -149,6 +218,9 @@ bool fetchGaugeData() {
   return true;
 }
 
+/**
+ * @brief Fetch daily forecast from Open-Meteo and fill forecast[] (tomorrow + next 2).
+ */
 bool fetchForecast() {
   BearSSL::WiFiClientSecure client;
   client.setInsecure();
