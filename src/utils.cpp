@@ -3,6 +3,12 @@
 #include <Adafruit_ILI9341.h>
 #include <math.h>
 
+/**
+ * @brief Calculate pixel width of text using classic Adafruit_GFX font.
+ * @param text Text string.
+ * @param size Text size multiplier.
+ * @return Width in pixels.
+ */
 static inline uint16_t classicTextWidthPx(const char* text, uint8_t size) {
   if (!text) return 0;
   // Adafruit_GFX classic (built-in) font is 5x7 with 1px spacing => 6x8 cell.
@@ -10,6 +16,7 @@ static inline uint16_t classicTextWidthPx(const char* text, uint8_t size) {
   return (uint16_t)(strlen(text) * 6U * (uint16_t)size);
 }
 
+/** @brief Draw text centered horizontally at given X coordinate. */
 void drawCenteredText(Adafruit_GFX& gfx, const char* text, int centerX, int y, uint8_t size, uint16_t color) {
   gfx.setTextSize(size);
   const uint16_t w = classicTextWidthPx(text, size);
@@ -19,6 +26,7 @@ void drawCenteredText(Adafruit_GFX& gfx, const char* text, int centerX, int y, u
   gfx.print(text);
 }
 
+/** @brief Draw text right-aligned to given X coordinate. */
 void drawRightAlignedText(Adafruit_GFX& gfx, const char* text, int rightX, int y, uint8_t size, uint16_t color) {
   gfx.setTextSize(size);
   const uint16_t w = classicTextWidthPx(text, size);
@@ -28,6 +36,7 @@ void drawRightAlignedText(Adafruit_GFX& gfx, const char* text, int rightX, int y
   gfx.print(text);
 }
 
+/** @brief Draw a small triangle indicating trend direction. */
 void drawTrendIndicator(Adafruit_GFX& gfx, int x, int y, int8_t trend) {
   // Simple, compact triangles: up / right / down.
   // This avoids clashing with the grid lines and keeps the meaning obvious.
@@ -44,6 +53,7 @@ void drawTrendIndicator(Adafruit_GFX& gfx, int x, int y, int8_t trend) {
   }
 }
 
+/** @brief Draw a pressure bar with label and trend indicator. */
 void drawPressureBar(Adafruit_GFX& gfx, int x, int y, float pressure, int8_t trend) {
   int barWidthMax = gfx.width() - (2 * x);
   if (barWidthMax < 50) barWidthMax = gfx.width() - 40;
@@ -71,6 +81,7 @@ void drawPressureBar(Adafruit_GFX& gfx, int x, int y, float pressure, int8_t tre
   drawTrendIndicator(gfx, textX + w + 8, y + 32, trend);
 }
 
+/** @brief Draw a weather icon (sun, cloud, rain, snow, storm) at given position. */
 void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   // Slightly smaller icon block (more room for numbers and wind)
   int baseY = topY + 25;
@@ -140,6 +151,7 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   }
 }
 
+/** @brief Draw compact wind speed label (auto-shrinks to fit column). */
 void drawWindLabel(Adafruit_GFX& gfx, int colLeft, int colRight, int y, const char* text) {
   const int colW = colRight - colLeft;
   // Keep it small so it never dominates the forecast column.
@@ -160,6 +172,12 @@ void drawWindLabel(Adafruit_GFX& gfx, int colLeft, int colRight, int y, const ch
   gfx.print(text);
 }
 
+/**
+ * @brief Convert UTF-8 Cyrillic to single-byte font encoding.
+ * @param[in]  source UTF-8 input string.
+ * @param[out] out    Output buffer for converted text.
+ * @param[in]  outLen Size of output buffer.
+ */
 void utf8rus(const char* source, char* out, size_t outLen) {
   if (!source || !out || outLen == 0) return;
 

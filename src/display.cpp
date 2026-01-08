@@ -46,6 +46,12 @@ static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudM
 
 static Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
+/**
+ * @brief Format temperature with unit as "-12.3 C".
+ * @param[out] out    Output buffer.
+ * @param[in]  outLen Buffer size.
+ * @param[in]  tempC  Temperature in Celsius.
+ */
 static void formatTempC1(char* out, size_t outLen, float tempC) {
   // Format as "-12.3 C" without using String(float, 1) to avoid heap churn.
   const int t10   = (int)roundf(tempC * 10.0f);
@@ -60,6 +66,12 @@ static void formatTempC1(char* out, size_t outLen, float tempC) {
   }
 }
 
+/**
+ * @brief Format temperature without unit as "-12.3".
+ * @param[out] out    Output buffer.
+ * @param[in]  outLen Buffer size.
+ * @param[in]  tempC  Temperature in Celsius.
+ */
 static void formatTemp1NoUnit(char* out, size_t outLen, float tempC) {
   // Format as "-12.3" (1 decimal) without heap allocations.
   const int t10   = (int)roundf(tempC * 10.0f);
@@ -74,6 +86,12 @@ static void formatTemp1NoUnit(char* out, size_t outLen, float tempC) {
   }
 }
 
+/**
+ * @brief Format temperature for large display (integer if < -10C, else 1 decimal).
+ * @param[out] out    Output buffer.
+ * @param[in]  outLen Buffer size.
+ * @param[in]  tempC  Temperature in Celsius.
+ */
 static void formatBigTempNoUnit(char* out, size_t outLen, float tempC) {
   // Match utils::formatBigTemp(): < -10C -> integer, otherwise 1 decimal.
   if (tempC < -10.0f) {
@@ -84,6 +102,12 @@ static void formatBigTempNoUnit(char* out, size_t outLen, float tempC) {
   formatTemp1NoUnit(out, outLen, tempC);
 }
 
+/**
+ * @brief Format value as integer percentage "55 %".
+ * @param[out] out    Output buffer.
+ * @param[in]  outLen Buffer size.
+ * @param[in]  value  Value to format.
+ */
 static void formatPercent0(char* out, size_t outLen, float value) {
   // Format as "55 %" without String(value, 0) + " %".
   const int v = (int)roundf(value);
@@ -264,6 +288,9 @@ void drawForecastScreen() {
   tft.drawFastHLine(0, 135, tft.width(), ILI9341_DARKGREY);
 }
 
+/**
+ * @brief Initialize TFT display (rotation, text settings, clear screen).
+ */
 void initDisplay() {
   tft.begin();
   tft.setRotation(1);
