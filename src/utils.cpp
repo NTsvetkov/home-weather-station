@@ -204,26 +204,56 @@ void utf8rus(const char* source, char* out, size_t outLen) {
   out[outIdx] = '\0';
 }
 
+/**
+ * @brief Format a YYYY-MM-DD date string to "Ден ДД" (e.g., "Пт 09").
+ *
+ * Calculates the day of week using Zeller's congruence and formats
+ * the output with Bulgarian weekday abbreviation + day number.
+ *
+ * @param[in]  ymd    Input date string in ISO format (YYYY-MM-DD).
+ * @param[out] out    Output buffer for formatted label.
+ * @param[in]  outLen Size of output buffer (minimum 8 bytes).
+ *
+ * @note Weekday abbreviations: Нд, Пн, Вт, Ср, Чт, Пт, Сб
+ */
 void formatDateLabelDDMM(const char* ymd, char* out, size_t outLen) {
   if (!out || outLen == 0) return;
   out[0] = '\0';
-
   if (!ymd) return;
 
-  // Expected: YYYY-MM-DD
-  // Positions: 0..3 year, 4 '-', 5..6 month, 7 '-', 8..9 day
-  if (strlen(ymd) >= 10 && ymd[4] == '-' && ymd[7] == '-') {
-    if (outLen < 6) return; // "DD.MM" + '\0'
-    out[0] = ymd[8];
-    out[1] = ymd[9];
-    out[2] = '.';
-    out[3] = ymd[5];
-    out[4] = ymd[6];
-    out[5] = '\0';
-    return;
+  // Bulgarian weekday abbreviations (converted once via utf8rus)
+  static char dowBuf[7][8];
+  static bool dowInit = false;
+  if (!dowInit) {
+    utf8rus("Нд", dowBuf[0], sizeof(dowBuf[0]));  // 0 = Sunday
+    utf8rus("Пн", dowBuf[1], sizeof(dowBuf[1]));  // 1 = Monday
+    utf8rus("Вт", dowBuf[2], sizeof(dowBuf[2]));  // 2 = Tuesday
+    utf8rus("Ср", dowBuf[3], sizeof(dowBuf[3]));  // 3 = Wednesday
+    utf8rus("Чт", dowBuf[4], sizeof(dowBuf[4]));  // 4 = Thursday
+    utf8rus("Пт", dowBuf[5], sizeof(dowBuf[5]));  // 5 = Friday
+    utf8rus("Сб", dowBuf[6], sizeof(dowBuf[6]));  // 6 = Saturday
+    dowInit = true;
   }
 
-  // Fallback: best-effort copy.
+  // Expected: YYYY-MM-DD (positions: 0-3 year, 5-6 month, 8-9 day)
+  if (strlen(ymd) >= 10 && ymd[4] == '-' && ymd[7] == '-') {
+    int year  = (ymd[0] - '0') * 1000 + (ymd[1] - '0') * 100 + (ymd[2] - '0') * 10 + (ymd[3] - '0');
+    int month = (ymd[5] - '0') * 10 + (ymd[6] - '0');
+    int day   = (ymd[8] - '0') * 10 + (ymd[9] - '0');
+
+    // Zeller's congruence for day of week (inline for simplicity)
+    int y = year, m = month;
+    if (m < 3) { m += 12; y--; }
+    int h = (day + (13 * (m + 1)) / 5 + (y % 100) + (y % 100) / 4 + (y / 100) / 4 - 2 * (y / 100)) % 7;
+    int dow = ((h + 6) % 7);  // Convert to 0=Sunday..6=Saturday
+
+    if (outLen >= 8) {
+      snprintf(out, outLen, "%s %02d", dowBuf[dow], day);
+      return;
+    }
+  }
+
+  // Fallback: best-effort copy
   strncpy(out, ymd, outLen);
   out[outLen - 1] = '\0';
 }
