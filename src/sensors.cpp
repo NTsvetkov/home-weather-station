@@ -2,6 +2,7 @@
 
 #include <Adafruit_AHTX0.h>
 
+#include "debug.h"
 #include "sensors.h"
 
 /**
@@ -16,29 +17,38 @@ static const float AHT_TEMP_MAX     = 60.0f;
 static const float AHT_HUMIDITY_MIN = 0.0f;
 static const float AHT_HUMIDITY_MAX = 100.0f;
 
+/**
+ * @brief Initialize the AHT20 sensor.
+ * @return true if sensor was found and initialized.
+ */
 bool initSensors() {
   if (!aht.begin()) {
-    Serial.println("Не може да се намери AHT20! Проверете връзките.");
+    LOG_E("AHT20 not found - check wiring");
     return false;
   }
-
   return true;
 }
 
+/**
+ * @brief Read temperature and humidity from the AHT20 sensor.
+ * @param[out] temperature Temperature in Celsius.
+ * @param[out] humidity    Relative humidity in percent.
+ * @return true if values are valid and within sensor range.
+ */
 bool readInternalSensor(float& temperature, float& humidity) {
-  sensors_event_t humidity_event, temp_event;
-  aht.getEvent(&humidity_event, &temp_event);
+  sensors_event_t humidityEvent, tempEvent;
+  aht.getEvent(&humidityEvent, &tempEvent);
 
-  const bool ok = isfinite(temp_event.temperature) &&
-                  isfinite(humidity_event.relative_humidity) &&
-                  temp_event.temperature > AHT_TEMP_MIN &&
-                  temp_event.temperature < AHT_TEMP_MAX &&
-                  humidity_event.relative_humidity >= AHT_HUMIDITY_MIN &&
-                  humidity_event.relative_humidity <= AHT_HUMIDITY_MAX;
+  const bool ok = isfinite(tempEvent.temperature) &&
+                  isfinite(humidityEvent.relative_humidity) &&
+                  tempEvent.temperature > AHT_TEMP_MIN &&
+                  tempEvent.temperature < AHT_TEMP_MAX &&
+                  humidityEvent.relative_humidity >= AHT_HUMIDITY_MIN &&
+                  humidityEvent.relative_humidity <= AHT_HUMIDITY_MAX;
 
   if (!ok) return false;
 
-  temperature = temp_event.temperature;
-  humidity    = humidity_event.relative_humidity;
+  temperature = tempEvent.temperature;
+  humidity    = humidityEvent.relative_humidity;
   return true;
 }
