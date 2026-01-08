@@ -20,6 +20,26 @@
 #include "data.h"
 #include "debug.h"
 
+// Fallback defaults if config constants are missing (CI without config.h).
+#ifndef CFG_GAUGE_HTTP_TIMEOUT_MS
+  #define CFG_GAUGE_HTTP_TIMEOUT_MS 3500UL
+#endif
+#ifndef CFG_GAUGE_URL
+  #define CFG_GAUGE_URL "https://meter.ac/gs/nodes/N200/gauge.txt"
+#endif
+#ifndef CFG_TLS_RX_BUFFER_BYTES_FORECAST
+  #define CFG_TLS_RX_BUFFER_BYTES_FORECAST 2048
+#endif
+#ifndef CFG_TLS_TX_BUFFER_BYTES_FORECAST
+  #define CFG_TLS_TX_BUFFER_BYTES_FORECAST 512
+#endif
+#ifndef CFG_FORECAST_URL
+  #define CFG_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,cloud_cover_mean&models=ecmwf_ifs&timezone=auto"
+#endif
+#ifndef CFG_FORECAST_JSON_DOC_CAPACITY
+  #define CFG_FORECAST_JSON_DOC_CAPACITY 8000
+#endif
+
 // Trend window is configured in config.h (minutes).
 // We expect it as a macro (so every translation unit sees the same value).
 // If it's missing, keep a safe default.
