@@ -157,6 +157,10 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 Pull requests are welcome! Please read the existing code style and test your changes before submitting.
 
+## Acknowledgments
+
+> 🤖 **Disclosure:** This is largely a vibe-coded project. I came up with the initial idea and a basic working prototype. Then various AI assistants (GitHub Copilot, Claude) generated most of the code while I provided guidance, code reviews, and uttered some choice words during debugging sessions. Human contribution: ~15-20%.
+
 ---
 
 Made with ❤️ in Bulgaria 🇧🇬
