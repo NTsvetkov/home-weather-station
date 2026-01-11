@@ -103,7 +103,7 @@
 | `WIFI_SSID` | - | Име на WiFi мрежата |
 | `WIFI_PASS` | - | Парола за WiFi |
 | `TZ_INFO` | `EET-2EEST...` | Часова зона (POSIX формат) |
-| `TREND_WINDOW_MINUTES` | 10 | Минути за изчисляване на тенденция |
+| `TREND_WINDOW_MINUTES` | 30 | Минути за изчисляване на тенденция |
 | `CFG_MAIN_SCREEN_DURATION_MS` | 10000 | Време на основен екран (ms) |
 | `CFG_FORECAST_SCREEN_DURATION_MS` | 10000 | Време на екран с прогноза (ms) |
 | `CFG_GAUGE_FETCH_INTERVAL_MS` | 180000 | Опресняване на външни данни (3 мин) |

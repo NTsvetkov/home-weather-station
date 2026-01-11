@@ -103,7 +103,7 @@ All settings are in `src/config.h`. Key options:
 | `WIFI_SSID` | - | Your WiFi network name |
 | `WIFI_PASS` | - | Your WiFi password |
 | `TZ_INFO` | `EET-2EEST...` | Timezone (POSIX format) |
-| `TREND_WINDOW_MINUTES` | 10 | Minutes for trend calculation |
+| `TREND_WINDOW_MINUTES` | 30 | Minutes for trend calculation |
 | `CFG_MAIN_SCREEN_DURATION_MS` | 10000 | Main screen display time (ms) |
 | `CFG_FORECAST_SCREEN_DURATION_MS` | 10000 | Forecast screen display time (ms) |
 | `CFG_GAUGE_FETCH_INTERVAL_MS` | 180000 | Outdoor data refresh (3 min) |
