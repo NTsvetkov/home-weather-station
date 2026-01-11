@@ -9,7 +9,7 @@
 
 // Trend window for outdoor readings (minutes).
 // Recommended: 30 (stable) or 10 (more reactive).
-#define TREND_WINDOW_MINUTES 10
+#define TREND_WINDOW_MINUTES 30
 
 // Timezone (POSIX TZ string) used for NTP local-midnight detection.
 // Bulgaria default: EET (UTC+2) with EEST (UTC+3) DST.

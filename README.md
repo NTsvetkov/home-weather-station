@@ -111,8 +111,25 @@ All settings are in `src/config.h`. Key options:
 
 ### Data Sources
 
-- **Outdoor data**: Fetched from `meter.ac` (configurable via `CFG_GAUGE_URL`)
-- **Forecast**: [Open-Meteo API](https://open-meteo.com/) (free, no API key required)
+#### Outdoor Readings
+Current outdoor temperature, humidity, and pressure are fetched from [meter.ac](https://meter.ac/) - a network of weather stations in Bulgaria. The default configuration uses data from **Pazardzhik**.
+
+#### Weather Forecast
+The 3-day forecast comes from [Open-Meteo](https://open-meteo.com/) using the **ECMWF IFS HRES** model (9km resolution). No API key required!
+
+You can customize the forecast location using the [Open-Meteo API builder](https://open-meteo.com/en/docs).
+
+#### Forecast Icons Logic
+Icons are generated based on multiple parameters (not just WMO weather codes):
+
+| Condition | Icon |
+|-----------|------|
+| WMO code 95, 96, 99 | ⛈️ Storm |
+| Precipitation ≥ 10mm | ❄️ Snow (if tMax ≤ 2°C) or 🌧️ Heavy rain |
+| Precipitation ≥ 0.2mm | ❄️ Snow (if tMax ≤ 2°C) or 🌦️ Rain |
+| Cloud cover < 25% | ☀️ Sunny |
+| Cloud cover < 70% | ⛅ Partly cloudy |
+| Cloud cover ≥ 70% | ☁️ Cloudy |
 
 ## Project Structure
 
