@@ -44,7 +44,7 @@
 // We expect it as a macro (so every translation unit sees the same value).
 // If it's missing, keep a safe default.
 #ifndef TREND_WINDOW_MINUTES
-#define TREND_WINDOW_MINUTES 10
+#define TREND_WINDOW_MINUTES 30
 #endif
 
 /**
