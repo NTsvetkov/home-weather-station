@@ -1,43 +1,89 @@
 # Copilot Instructions for Weather Station Project
 
-## Project Overview
-- This is an ESP8266-based weather station project using PlatformIO.
-- The main application is in `src/main.cpp` and uses the TFT_eSPI library for display, Adafruit_AHTX0 for sensor input, and WiFi/HTTP libraries for network communication.
-- The project is configured via `platformio.ini`.
+## Architecture Overview
+ESP8266-based weather station with modular source structure:
+- **`main.cpp`** - Application loop, state machine, timekeeping (NTP), WiFi lifecycle
+- **`data.cpp/h`** - External data: HTTP fetching (meter.ac gauge, Open-Meteo forecast), trend calculation via ring buffer
+- **`display.cpp/h`** - TFT rendering: `drawMainScreen()`, `drawForecastScreen()`, icon selection logic
+- **`sensors.cpp/h`** - AHT20 I2C sensor: `initSensors()`, `readInternalSensor()`
+- **`utils.cpp/h`** - GFX helpers: `drawCenteredText()`, `drawTrendIndicator()`
+- **`config.h`** - User secrets + tunable intervals (gitignored; copy from `config.example.h`)
 
-## Architecture & Data Flow
-- The device connects to WiFi, fetches weather data from a remote endpoint, and displays both external (fetched) and internal (sensor) temperature, humidity, and pressure on a TFT display.
-- Display logic is modularized into functions: `drawThermometer`, `drawHygrometer`, `drawPressureBar`, `drawStar`, and `numberBox`.
-- The main loop alternates between fetching/displaying weather data and running a sprite demo (for testing the display).
+## Data Flow
+1. **Internal** → `readInternalSensor()` polls AHT20 every 2s → `intTemperature/intHumidity`
+2. **External** → `fetchGaugeData()` from meter.ac → `extTemperature/extHumidity/extPressure` + trend history
+3. **Forecast** → `fetchForecast()` from Open-Meteo → `forecast[3]` array with processed daily data
+4. **Display** → Main loop alternates screens via `showMainScreen` flag; `needRedraw` triggers redraws
 
 ## Developer Workflows
-- **Build & Upload:** Use PlatformIO commands (`pio run`, `pio upload`) or the PlatformIO VS Code extension.
-- **Serial Monitor:** Use `pio device monitor` or the VS Code serial monitor for debug output at 115200 baud.
-- **Dependencies:** Libraries are included via `#include` in `main.cpp` and must be installed via PlatformIO's library manager if not present.
+```bash
+pio run -t upload        # Build and flash
+pio device monitor       # Serial at 115200 baud
+cp src/config.example.h src/config.h  # First-time setup (edit with WiFi creds)
+```
 
-## Project-Specific Patterns
-- All display drawing is abstracted into helper functions for clarity and reuse.
-- WiFi credentials are hardcoded in `main.cpp` for demo purposes; consider secrets management for production.
-- The sprite demo (star/numberBox) is used for display testing and can be toggled by replacing the main loop logic.
-- Comments in code are often bilingual (English/Bulgarian) for clarity to local developers.
+## Critical Patterns
 
-## Key Files & Directories
-- `src/main.cpp`: Main application logic, display, and sensor code.
-- `lib/TFT_eSPI/User_Setups/Setup_ILI9341_ESP8266.h`: Display hardware configuration.
-- `platformio.ini`: PlatformIO project configuration.
+### Configuration via Macros
+All tunables use `#ifndef` guards in `main.cpp` with fallbacks. Override in `config.h`:
+```cpp
+#define CFG_GAUGE_FETCH_INTERVAL_MS 180000UL  // 3 min outdoor refresh
+#define TREND_WINDOW_MINUTES 30               // History window for trends
+```
 
-## Integration Points
-- External weather data is fetched from `https://meter.ac/gs/nodes/N200/gauge.txt`.
-- Internal sensor data is read from an AHT20 sensor via I2C.
+### Debug Logging
+Use `LOG_I/LOG_W/LOG_E` from `debug.h` (stores strings in PROGMEM). Control via `DEBUG_LEVEL` (0-3).
 
-## Example: Adding a New Display Feature
-- Add a new drawing function in `main.cpp` (e.g., `void drawWindGauge(...)`).
-- Call the function from the main loop after clearing or updating the display.
+### ESP8266 Constraints
+- Call `yield()` or `delay(1)` in loops to prevent watchdog resets
+- Use `WiFiClientSecureBearSSL` with `setInsecure()` for HTTPS (no cert validation)
+- Avoid `String` class in loops; use stack buffers (`char buf[32]`)
 
-## Conventions
-- Use `TFT_eSprite` for off-screen drawing and transparency effects.
-- Use `yield()` in long loops to prevent ESP8266 watchdog resets.
-- Use `delay(60000)` at the end of the loop to update once per minute.
+### Trend Calculation
+Ring buffer in `data.cpp` stores 8 samples. `findRefSample()` looks back `TREND_WINDOW_MINUTES` to compute direction (+1/0/-1) via `calcTrend()` with configurable thresholds.
 
----
-For questions about hardware setup, see `lib/TFT_eSPI/User_Setups/Setup_ILI9341_ESP8266.h` and code comments in `main.cpp`.
+### Timekeeping (NTP)
+The `TimeKeeper` struct in `main.cpp` maintains a millis-based epoch estimate synced from NTP:
+- **Sync cadence**: `CFG_TIME_SYNC_INTERVAL_MS` (1h default), or `CFG_TIME_SYNC_RETRY_MS` (5s) while NTP invalid
+- **Midnight rollover**: `getLocalDateYYYYMMDD_fromTimekeeper()` checks date every `CFG_DATE_CHECK_INTERVAL_MS`; when date changes, `midnightForecastPending = true` triggers a forecast refresh
+- **Timezone**: Configured via POSIX `TZ_INFO` string (default: Bulgaria EET/EEST)
+
+```cpp
+// TimeKeeper fields
+bool valid;          // true once NTP synced
+time_t baseEpoch;    // seconds since 1970
+uint32_t baseMillis; // millis() at sync time
+```
+
+### Forecast Icon Logic
+`pickDayIcon()` in `display.cpp` selects icons based on multiple weather parameters (not just WMO codes):
+
+| Priority | Condition | Icon |
+|----------|-----------|------|
+| 1 | WMO 95/96/99 | `ICON_STORM` |
+| 2 | precip ≥ 10mm | `ICON_SNOW` (tMax ≤ 2°C) or `ICON_HEAVY_RAIN` |
+| 3 | precip ≥ 0.2mm | `ICON_SNOW` (tMax ≤ 2°C) or `ICON_RAIN` |
+| 4 | cloudMean < 25% | `ICON_SUN` |
+| 5 | cloudMean < 70% | `ICON_PARTLY` |
+| 6 | default | `ICON_CLOUDY` |
+
+Wind is displayed as a label, not an icon. The `DayIcon` enum maps to drawing functions in the forecast screen.
+
+### Display Updates
+Set `needRedraw = true` to trigger screen refresh. Screen switching uses `lastScreenSwitchMs` timer. Internal sensor updates don't force redraws unless delta exceeds `CFG_TEMP_DELTA_C`.
+
+## Adding Features
+
+**New sensor reading:**
+1. Add function to `sensors.cpp`, declare in `sensors.h`
+2. Add state variable to `data.h` (e.g., `extern float intPressure;`)
+3. Update `main.cpp` loop to call and store value
+
+**New display element:**
+1. Add drawing function to `display.cpp` (follow `formatTempC1()` pattern for formatting)
+2. Call from `drawMainScreen()` or `drawForecastScreen()`
+3. Use `utils.h` helpers for alignment (`drawCenteredText`, `drawRightAlignedText`)
+
+**New config option:**
+1. Add `#define CFG_*` to `config.example.h` with default
+2. Add `#ifndef` guard in the consuming `.cpp` file

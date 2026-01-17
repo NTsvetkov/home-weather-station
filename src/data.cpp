@@ -86,48 +86,49 @@ struct ExtSample {
   float p;      ///< pressure (hPa)
 };
 
-static ExtSample extHist[8];
-static uint8_t extHistCount = 0;
-static uint8_t extHistHead  = 0;
+// Fixed buffer size - sample interval adapts to TREND_WINDOW_MINUTES.
+// 10 samples means oldest sample is always ~90% of the trend window.
+static constexpr uint8_t TREND_BUFFER_SIZE = 10;
+static ExtSample extHist[TREND_BUFFER_SIZE];
+static uint8_t extHistCount                = 0;
+static uint8_t extHistHead                 = 0;
+static uint32_t lastTrendSampleMs          = 0;
+
+/**
+ * @brief Calculate the adaptive sample interval based on trend window.
+ * @return Interval in milliseconds between trend samples.
+ */
+static uint32_t getTrendSampleIntervalMs() {
+  // Interval = window / buffer_size
+  // E.g., 30 min window / 10 samples = 3 min interval
+  return ((uint32_t)TREND_WINDOW_MINUTES * 60UL * 1000UL) / TREND_BUFFER_SIZE;
+}
 
 /**
  * @brief Push a new outdoor sample into the ring buffer.
  */
 static void pushExtSample(float t, float h, float p) {
   extHist[extHistHead] = { millis(), t, h, p };
-  extHistHead = (extHistHead + 1) % (uint8_t)(sizeof(extHist) / sizeof(extHist[0]));
-  if (extHistCount < (uint8_t)(sizeof(extHist) / sizeof(extHist[0]))) extHistCount++;
+  extHistHead          = (extHistHead + 1) % TREND_BUFFER_SIZE;
+  if (extHistCount < TREND_BUFFER_SIZE) extHistCount++;
 }
 
 /**
- * @brief Find a reference sample that is at least windowMs old.
- * @param[in]  nowMs    Current millis() value.
- * @param[in]  windowMs Minimum age in milliseconds.
- * @param[out] out      The found sample.
- * @return true if a suitable sample was found.
+ * @brief Get the oldest sample in the ring buffer.
+ * @param[out] out The oldest sample.
+ * @return true if buffer has at least 2 samples.
+ *
+ * With adaptive sampling, the oldest sample is always close to the trend window age,
+ * so we simply return it without searching for a specific time threshold.
  */
-static bool findRefSample(uint32_t nowMs, uint32_t windowMs, ExtSample& out) {
+static bool getOldestSample(ExtSample& out) {
   if (extHistCount < 2) return false;
 
-  // Search oldest-to-newest for the newest sample that is at least windowMs old.
   // Buffer order: head points to next write, so oldest is at (head - count).
-  int cap   = (int)(sizeof(extHist) / sizeof(extHist[0]));
   int start = (int)extHistHead - (int)extHistCount;
-  if (start < 0) start += cap;
+  if (start < 0) start += TREND_BUFFER_SIZE;
 
-  bool found = false;
-  ExtSample best = extHist[start];
-  for (uint8_t i = 0; i < extHistCount; i++) {
-    int idx            = (start + i) % cap;
-    const ExtSample& s = extHist[idx];
-    if (nowMs - s.ms >= windowMs) {
-      best  = s;
-      found = true;
-    }
-  }
-  if (!found) return false;
-  out = best;
-
+  out = extHist[start];
   return true;
 }
 
@@ -210,12 +211,10 @@ static bool parseGaugeCsv(const String& payload, float& outTemp, float& outPress
  * @brief Update outdoor trend indicators from history buffer.
  */
 static void updateExtTrends() {
-  const uint32_t windowMs = (uint32_t)TREND_WINDOW_MINUTES * 60UL * 1000UL;
   ExtSample ref;
-  if (!findRefSample(millis(), windowMs, ref)) {
-    // Not enough history yet (or history window not covered).
+  if (!getOldestSample(ref)) {
+    // Not enough history yet.
     // Keep the last computed trends instead of forcing "no change".
-    // This prevents the UI from flickering between an arrow and a dash.
     return;
   }
 
@@ -263,7 +262,15 @@ bool fetchGaugeData() {
   extHumidity    = h;
   haveExtData    = true;
 
-  pushExtSample(extTemperature, extHumidity, extPressure);
+  // Adaptive sampling: only store a sample if enough time has passed.
+  // This ensures the buffer covers the full trend window regardless of fetch frequency.
+  const uint32_t now            = millis();
+  const uint32_t sampleInterval = getTrendSampleIntervalMs();
+  if (extHistCount == 0 || (now - lastTrendSampleMs) >= sampleInterval) {
+    pushExtSample(extTemperature, extHumidity, extPressure);
+    lastTrendSampleMs = now;
+  }
+
   updateExtTrends();
 
   return true;
