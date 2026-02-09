@@ -102,8 +102,9 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
     // Make the sun a bit larger for "partly" so it remains clearly visible.
     int sunR = isPartly ? 14 : 16;
     gfx.fillCircle(sunX, sunY, sunR, ILI9341_YELLOW);
+    constexpr float RAY_STEP = PI / 4.0f;
     for (int i = 0; i < 8; i++) {
-      float angle = i * PI / 4;
+      float angle = i * RAY_STEP;
       int x1 = sunX + cos(angle) * (sunR + 5);
       int y1 = sunY + sin(angle) * (sunR + 6);
       int x2 = sunX + cos(angle) * (sunR + 11);
@@ -158,14 +159,11 @@ void drawWindLabel(Adafruit_GFX& gfx, int colLeft, int colRight, int y, const ch
   uint8_t size = 2;
 
   // Fast auto-shrink for classic font: width is proportional to strlen(text).
-  while (size > 1) {
-    const uint16_t w = classicTextWidthPx(text, size);
-    if (w <= (uint16_t)(colW - 6)) break;
+  uint16_t w = classicTextWidthPx(text, size);
+  while (size > 1 && w > (uint16_t)(colW - 6)) {
     size--;
+    w = classicTextWidthPx(text, size);
   }
-
-  // Draw as plain text (no big badge box) to guarantee it fits.
-  const uint16_t w = classicTextWidthPx(text, size);
   int drawX = colRight - (int)w;
   gfx.setTextColor(ILI9341_WHITE);
   gfx.setCursor(drawX, y);
@@ -182,7 +180,7 @@ void utf8rus(const char* source, char* out, size_t outLen) {
   if (!source || !out || outLen == 0) return;
 
   size_t srcLen = strlen(source);
-  size_t i = 0;
+  size_t i      = 0;
   size_t outIdx = 0;
 
   while (i < srcLen && outIdx < outLen - 1) {
@@ -222,6 +220,25 @@ void utf8rus(const char* source, char* out, size_t outLen) {
   out[outIdx] = '\0';
 }
 
+// Bulgarian weekday abbreviations (pre-converted in initUtilLabels()).
+static char dowBuf[7][8];
+
+/**
+ * @brief Pre-convert Bulgarian weekday abbreviations via utf8rus().
+ *
+ * Must be called once at startup (from initDisplay()) before any
+ * formatDateLabelDDMM() calls.
+ */
+void initUtilLabels() {
+  utf8rus("Нд", dowBuf[0], sizeof(dowBuf[0]));  // 0 = Sunday
+  utf8rus("Пн", dowBuf[1], sizeof(dowBuf[1]));  // 1 = Monday
+  utf8rus("Вт", dowBuf[2], sizeof(dowBuf[2]));  // 2 = Tuesday
+  utf8rus("Ср", dowBuf[3], sizeof(dowBuf[3]));  // 3 = Wednesday
+  utf8rus("Чт", dowBuf[4], sizeof(dowBuf[4]));  // 4 = Thursday
+  utf8rus("Пт", dowBuf[5], sizeof(dowBuf[5]));  // 5 = Friday
+  utf8rus("Сб", dowBuf[6], sizeof(dowBuf[6]));  // 6 = Saturday
+}
+
 /**
  * @brief Format a YYYY-MM-DD date string to "Ден ДД" (e.g., "Пт 09").
  *
@@ -238,20 +255,6 @@ void formatDateLabelDDMM(const char* ymd, char* out, size_t outLen) {
   if (!out || outLen == 0) return;
   out[0] = '\0';
   if (!ymd) return;
-
-  // Bulgarian weekday abbreviations (converted once via utf8rus)
-  static char dowBuf[7][8];
-  static bool dowInit = false;
-  if (!dowInit) {
-    utf8rus("Нд", dowBuf[0], sizeof(dowBuf[0]));  // 0 = Sunday
-    utf8rus("Пн", dowBuf[1], sizeof(dowBuf[1]));  // 1 = Monday
-    utf8rus("Вт", dowBuf[2], sizeof(dowBuf[2]));  // 2 = Tuesday
-    utf8rus("Ср", dowBuf[3], sizeof(dowBuf[3]));  // 3 = Wednesday
-    utf8rus("Чт", dowBuf[4], sizeof(dowBuf[4]));  // 4 = Thursday
-    utf8rus("Пт", dowBuf[5], sizeof(dowBuf[5]));  // 5 = Friday
-    utf8rus("Сб", dowBuf[6], sizeof(dowBuf[6]));  // 6 = Saturday
-    dowInit = true;
-  }
 
   // Expected: YYYY-MM-DD (positions: 0-3 year, 5-6 month, 8-9 day)
   if (strlen(ymd) >= 10 && ymd[4] == '-' && ymd[7] == '-') {

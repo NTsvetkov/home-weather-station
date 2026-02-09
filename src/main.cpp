@@ -148,11 +148,11 @@ const float HUM_DELTA  = (float)CFG_HUM_DELTA_PCT;
  * Synced periodically from system time (NTP) to avoid drift.
  */
 struct TimeKeeper {
-  bool valid           = false;  ///< true if baseEpoch is valid
-  time_t baseEpoch     = 0;      ///< seconds since 1970
-  uint32_t baseMillis  = 0;      ///< millis() at baseEpoch
-  uint32_t lastSyncCheckMs = 0;  ///< throttle sync attempts
-  uint32_t lastDateCheckMs = 0;  ///< throttle date checks
+  bool valid               = false;  ///< true if baseEpoch is valid
+  time_t baseEpoch         = 0;      ///< seconds since 1970
+  uint32_t baseMillis      = 0;      ///< millis() at baseEpoch
+  uint32_t lastSyncCheckMs = 0;      ///< throttle sync attempts
+  uint32_t lastDateCheckMs = 0;      ///< throttle date checks
 };
 
 static TimeKeeper tk;
@@ -180,9 +180,9 @@ static bool timekeeperSyncFromSystem(uint32_t nowMs, bool force) {
   time_t t = time(nullptr);
   if (!isEpochValid(t)) return false;
 
-  tk.baseEpoch = t;
+  tk.baseEpoch  = t;
   tk.baseMillis = nowMs;
-  tk.valid = true;
+  tk.valid      = true;
   return true;
 }
 
@@ -273,6 +273,16 @@ void setup() {
   tk = {};
 }
 
+/**
+ * @brief Reset screen timer to show main screen immediately.
+ * @param nowMs Current millis() value.
+ */
+static inline void resetToMainScreen(uint32_t nowMs) {
+  lastScreenSwitchMs    = nowMs;
+  currentScreenDuration = MAIN_SCREEN_DURATION_MS;
+  needRedraw            = true;
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                Main Loop                                   */
 /* -------------------------------------------------------------------------- */
@@ -316,7 +326,7 @@ void loop() {
     tk.lastDateCheckMs = now;
     char d[11];
     if (getLocalDateYYYYMMDD_fromTimekeeper(now, d, sizeof(d))) {
-      if (lastNtpDateValid && strcmp(d, lastNtpDate) != 0) {
+      if (lastNtpDateValid && memcmp(d, lastNtpDate, 10) != 0) {
         LOG_I("Midnight rollover: %s -> %s", lastNtpDate, d);
         midnightForecastPending = true;
       }
@@ -384,9 +394,7 @@ void loop() {
             if (showMainScreen) {
               // We may have been blocked in this loop for several seconds while fetching.
               // Reset the screen timer so we don't immediately switch away before the redraw runs.
-              lastScreenSwitchMs    = millis();
-              currentScreenDuration = MAIN_SCREEN_DURATION_MS;
-              needRedraw            = true;
+              resetToMainScreen(now);
               firstExtRedrawDone    = true;
             } else {
               extDataRedrawPending = true;
@@ -415,9 +423,7 @@ void loop() {
         // If we just got external data for the first time, schedule a single redraw.
         if (!firstExtRedrawDone && haveExtData) {
           if (showMainScreen) {
-            lastScreenSwitchMs    = millis();
-            currentScreenDuration = MAIN_SCREEN_DURATION_MS;
-            needRedraw            = true;
+            resetToMainScreen(now);
             firstExtRedrawDone    = true;
           } else {
             extDataRedrawPending = true;
