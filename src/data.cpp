@@ -24,6 +24,12 @@
 #ifndef CFG_GAUGE_HTTP_TIMEOUT_MS
   #define CFG_GAUGE_HTTP_TIMEOUT_MS 3500UL
 #endif
+#ifndef CFG_TLS_RX_BUFFER_BYTES_GAUGE
+  #define CFG_TLS_RX_BUFFER_BYTES_GAUGE 512
+#endif
+#ifndef CFG_TLS_TX_BUFFER_BYTES_GAUGE
+  #define CFG_TLS_TX_BUFFER_BYTES_GAUGE 512
+#endif
 #ifndef CFG_GAUGE_URL
   #define CFG_GAUGE_URL "https://meter.ac/gs/nodes/N200/gauge.txt"
 #endif
@@ -153,8 +159,7 @@ static int8_t calcTrend(float current, float ref, float threshold) {
 static bool parseFloatSpan(const char* start, size_t len, float& out) {
   // Copy into a small buffer to use strtof safely.
   // Values in gauge.txt are short (e.g. "-12.3").
-  if (len == 0) return false;
-  if (len >= 32) len = 31;
+  if (len == 0 || len >= 32) return false;
   char buf[32];
   memcpy(buf, start, len);
   buf[len] = '\0';
@@ -229,8 +234,9 @@ static void updateExtTrends() {
  * @return true if data was successfully fetched and parsed.
  */
 bool fetchGaugeData() {
-  WiFiClientSecure client;
+  BearSSL::WiFiClientSecure client;
   client.setInsecure();
+  client.setBufferSizes(CFG_TLS_RX_BUFFER_BYTES_GAUGE, CFG_TLS_TX_BUFFER_BYTES_GAUGE);
 
   HTTPClient https;
   https.setTimeout(CFG_GAUGE_HTTP_TIMEOUT_MS);

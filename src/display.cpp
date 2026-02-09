@@ -46,6 +46,16 @@ static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudM
 
 static Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
 
+// Pre-converted Cyrillic labels (initialized once in initDisplay()).
+static char labelOutside[16];
+static char labelInside[16];
+static char labelNoData1[16];
+static char labelNoData2[16];
+static char labelForecast[24];
+static char labelNoForecast[32];
+static char unitLiters[8];
+static char unitKmh[12];
+
 /**
  * @brief Format temperature with unit as "-12.3 C".
  * @param[out] out    Output buffer.
@@ -155,18 +165,6 @@ void drawMainScreen() {
   tft.drawFastHLine(0, 175, tft.width(), ILI9341_DARKGREY);
   tft.drawFastHLine(0, 176, tft.width(), ILI9341_DARKGREY);
 
-  static char labelOutside[16];
-  static char labelInside[16];
-  static char labelNoData1[16];
-  static char labelNoData2[16];
-  static bool labelsInitialized = false;
-  if (!labelsInitialized) {
-    utf8rus("навън", labelOutside, sizeof(labelOutside));
-    utf8rus("вътре", labelInside, sizeof(labelInside));
-    utf8rus("няма", labelNoData1, sizeof(labelNoData1));
-    utf8rus("данни", labelNoData2, sizeof(labelNoData2));
-    labelsInitialized = true;
-  }
   drawCenteredText(tft, labelOutside, leftCenterX, labelY, 3, ILI9341_WHITE);
   if (haveExtData) {
     // Format so values like -10.0, 12.3 always fit in the cell
@@ -211,15 +209,6 @@ void drawMainScreen() {
 void drawForecastScreen() {
   tft.fillScreen(ILI9341_BLACK);
 
-  static char labelForecast[24];
-  static char labelNoForecast[32];
-  static bool forecastLabelsInit = false;
-  if (!forecastLabelsInit) {
-    utf8rus("прогноза", labelForecast, sizeof(labelForecast));
-    utf8rus("няма прогноза", labelNoForecast, sizeof(labelNoForecast));
-    forecastLabelsInit = true;
-  }
-
   drawCenteredText(tft, labelForecast, tft.width() / 2, 4, 3, ILI9341_WHITE);
   tft.drawFastHLine(0, 35, tft.width(), ILI9341_DARKGREY); // line under title
 
@@ -230,15 +219,6 @@ void drawForecastScreen() {
   }
 
   int colW = tft.width() / 3;
-
-  static char unitLiters[8];
-  static char unitKmh[12];
-  static bool unitsInit = false;
-  if (!unitsInit) {
-    utf8rus(" Л", unitLiters, sizeof(unitLiters));
-    utf8rus(" кмч", unitKmh, sizeof(unitKmh));
-    unitsInit = true;
-  }
 
   for (int i = 0; i < forecastCount && i < 3; i++) {
     int colStart  = i * colW;
@@ -299,4 +279,16 @@ void initDisplay() {
   tft.cp437(false);
   tft.setTextWrap(false);
   tft.fillScreen(ILI9341_BLACK);
+
+  // Pre-convert all Cyrillic labels once at startup.
+  utf8rus("навън", labelOutside, sizeof(labelOutside));
+  utf8rus("вътре", labelInside, sizeof(labelInside));
+  utf8rus("няма", labelNoData1, sizeof(labelNoData1));
+  utf8rus("данни", labelNoData2, sizeof(labelNoData2));
+  utf8rus("прогноза", labelForecast, sizeof(labelForecast));
+  utf8rus("няма прогноза", labelNoForecast, sizeof(labelNoForecast));
+  utf8rus(" Л", unitLiters, sizeof(unitLiters));
+  utf8rus(" кмч", unitKmh, sizeof(unitKmh));
+
+  initUtilLabels();
 }

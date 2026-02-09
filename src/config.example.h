@@ -57,8 +57,8 @@
 #define CFG_GAUGE_HTTP_TIMEOUT_MS          3500UL
 #define CFG_FORECAST_HTTP_TIMEOUT_MS       9000UL
 
-// TLS buffers
-#define CFG_TLS_RX_BUFFER_BYTES_GAUGE      1024
+// TLS buffers (gauge response is ~200 bytes CSV; 512 is the BearSSL minimum)
+#define CFG_TLS_RX_BUFFER_BYTES_GAUGE      512
 #define CFG_TLS_TX_BUFFER_BYTES_GAUGE      512
 #define CFG_TLS_RX_BUFFER_BYTES_FORECAST   2048
 #define CFG_TLS_TX_BUFFER_BYTES_FORECAST   512

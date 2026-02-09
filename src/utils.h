@@ -61,6 +61,9 @@ void drawWindLabel(Adafruit_GFX& gfx, int colLeft, int colRight, int y, const ch
  */
 void utf8rus(const char* source, char* out, size_t outLen);
 
+/** @brief Pre-convert Cyrillic weekday abbreviations (call once at startup). */
+void initUtilLabels();
+
 /**
  * @brief Format YYYY-MM-DD to a short numeric label (DD.MM) without heap allocations.
  * @param ymd Input expected: YYYY-MM-DD.
