@@ -2,14 +2,15 @@
 
 🇧🇬 [Прочети на български](README.bg.md)
 
-A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/outdoor temperature, humidity, pressure, and a 3-day weather forecast.
+A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/outdoor temperature, humidity, pressure, a 3-day weather forecast, and today's detailed forecast split into 6-hour blocks.
 
 ## Features
 
 - 📊 **Dual readings**: Indoor (AHT20 sensor) and outdoor (fetched from remote station)
 - 🌡️ Temperature, humidity, and pressure display with trend indicators
 - 📅 3-day weather forecast from Open-Meteo API
-- 🔄 Auto-switching between main screen and forecast
+- 🕐 Today's forecast in 4 six-hour blocks (00-06, 06-12, 12-18, 18-24) with icons, temperature range, precipitation, and wind
+- 🔄 Three-screen rotation: main → 3-day forecast → main → today's forecast
 - 🕐 NTP time synchronization with timezone support
 - 📶 WiFi auto-reconnect
 
@@ -106,6 +107,7 @@ All settings are in `src/config.h`. Key options:
 | `TREND_WINDOW_MINUTES` | 30 | Minutes for trend calculation |
 | `CFG_MAIN_SCREEN_DURATION_MS` | 10000 | Main screen display time (ms) |
 | `CFG_FORECAST_SCREEN_DURATION_MS` | 10000 | Forecast screen display time (ms) |
+| `CFG_TODAY_SCREEN_DURATION_MS` | 10000 | Today's forecast screen display time (ms) |
 | `CFG_GAUGE_FETCH_INTERVAL_MS` | 180000 | Outdoor data refresh (3 min) |
 | `CFG_FORECAST_FETCH_INTERVAL_MS` | 3600000 | Forecast refresh (1 hour) |
 
@@ -116,6 +118,8 @@ Current outdoor temperature, humidity, and pressure are fetched from [meter.ac](
 
 #### Weather Forecast
 The 3-day forecast comes from [Open-Meteo](https://open-meteo.com/) using the **ECMWF IFS HRES** model (9km resolution). No API key required!
+
+Today's 6-hour forecast uses a separate hourly endpoint (`forecast_days=1`) from the same API, aggregating 24 hourly values into 4 blocks.
 
 You can customize the forecast location using the [Open-Meteo API builder](https://open-meteo.com/en/docs).
 
