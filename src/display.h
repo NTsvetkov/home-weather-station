@@ -15,3 +15,6 @@ void drawMainScreen();
 
 /** @brief Render the forecast screen (next days). */
 void drawForecastScreen();
+
+/** @brief Render today's 6-hour block forecast screen (2x2 grid). */
+void drawTodayScreen();

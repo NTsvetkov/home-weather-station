@@ -35,6 +35,9 @@
 #ifndef CFG_FORECAST_SCREEN_DURATION_MS
 #define CFG_FORECAST_SCREEN_DURATION_MS 10000UL
 #endif
+#ifndef CFG_TODAY_SCREEN_DURATION_MS
+#define CFG_TODAY_SCREEN_DURATION_MS 10000UL
+#endif
 #ifndef CFG_INTERNAL_READ_INTERVAL_MS
 #define CFG_INTERNAL_READ_INTERVAL_MS 2000UL
 #endif
@@ -103,7 +106,11 @@ uint32_t lastForecastSuccessMs      = 0;
 uint32_t lastScreenSwitchMs         = 0;
 uint32_t currentScreenDuration      = 0;
 uint32_t lastIntReadMs              = 0;
-bool showMainScreen                 = true;
+/**
+ * @brief Screen cycle: 0=MAIN, 1=FORECAST, 2=MAIN, 3=TODAY.
+ * Repeats: main → 3day → main → today → main → ...
+ */
+uint8_t screenCycleIndex            = 0;
 bool needRedraw                     = true;
 
 static bool midnightForecastPending = false;
@@ -128,6 +135,7 @@ const uint32_t FORECAST_FETCH_INTERVAL_MS    = (uint32_t)CFG_FORECAST_FETCH_INTE
 const uint32_t FORECAST_RETRY_INTERVAL_MS    = (uint32_t)CFG_FORECAST_RETRY_INTERVAL_MS;
 const uint32_t MAIN_SCREEN_DURATION_MS       = (uint32_t)CFG_MAIN_SCREEN_DURATION_MS;
 const uint32_t FORECAST_SCREEN_DURATION_MS   = (uint32_t)CFG_FORECAST_SCREEN_DURATION_MS;
+const uint32_t TODAY_SCREEN_DURATION_MS      = (uint32_t)CFG_TODAY_SCREEN_DURATION_MS;
 const uint32_t INTERNAL_READ_INTERVAL_MS     = (uint32_t)CFG_INTERNAL_READ_INTERVAL_MS;
 const uint32_t WIFI_RECONNECT_INTERVAL_MS    = (uint32_t)CFG_WIFI_RECONNECT_INTERVAL_MS;
 
@@ -256,7 +264,7 @@ void setup() {
 
   lastForecastFetchMs   = 0;
   lastForecastSuccessMs = 0;
-  showMainScreen        = true;
+  screenCycleIndex      = 0;
   lastScreenSwitchMs    = millis();
   lastIntReadMs         = 0;
   currentScreenDuration = MAIN_SCREEN_DURATION_MS;
@@ -278,9 +286,26 @@ void setup() {
  * @param nowMs Current millis() value.
  */
 static inline void resetToMainScreen(uint32_t nowMs) {
+  screenCycleIndex      = 0;
   lastScreenSwitchMs    = nowMs;
   currentScreenDuration = MAIN_SCREEN_DURATION_MS;
   needRedraw            = true;
+}
+
+/**
+ * @brief Get screen duration for the given cycle index.
+ */
+static inline uint32_t durationForCycleIndex(uint8_t idx) {
+  switch (idx) {
+    case 1: return FORECAST_SCREEN_DURATION_MS;
+    case 3: return TODAY_SCREEN_DURATION_MS;
+    default: return MAIN_SCREEN_DURATION_MS; // 0 and 2 are main
+  }
+}
+
+/** @brief Check if current cycle index is a main screen. */
+static inline bool isMainScreen() {
+  return (screenCycleIndex == 0 || screenCycleIndex == 2);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -348,13 +373,13 @@ void loop() {
 
   // Screen switching + drawing comes before any potentially slow network fetch.
   if (now - lastScreenSwitchMs >= currentScreenDuration) {
-    showMainScreen        = !showMainScreen;
+    screenCycleIndex      = (screenCycleIndex + 1) % 4; // 0→1→2→3→0...
     lastScreenSwitchMs    = now;
-    currentScreenDuration = showMainScreen ? MAIN_SCREEN_DURATION_MS : FORECAST_SCREEN_DURATION_MS;
+    currentScreenDuration = durationForCycleIndex(screenCycleIndex);
     needRedraw            = true;
 
-    // If external data arrived while we were on the forecast screen, redraw once on next main entry.
-    if (showMainScreen && extDataRedrawPending && haveExtData && !firstExtRedrawDone) {
+    // If external data arrived while we were on a non-main screen, redraw once on next main entry.
+    if (isMainScreen() && extDataRedrawPending && haveExtData && !firstExtRedrawDone) {
       needRedraw           = true;
       firstExtRedrawDone   = true;
       extDataRedrawPending = false;
@@ -362,10 +387,10 @@ void loop() {
   }
 
   if (needRedraw) {
-    if (showMainScreen) {
-      drawMainScreen();
-    } else {
-      drawForecastScreen();
+    switch (screenCycleIndex) {
+      case 1: drawForecastScreen(); break;
+      case 3: drawTodayScreen();    break;
+      default: drawMainScreen();    break; // 0 and 2
     }
     needRedraw = false;
   }
@@ -391,7 +416,7 @@ void loop() {
 
           // Ensure the main screen will update exactly once to replace "няма данни".
           if (!firstExtRedrawDone) {
-            if (showMainScreen) {
+            if (isMainScreen()) {
               // We may have been blocked in this loop for several seconds while fetching.
               // Reset the screen timer so we don't immediately switch away before the redraw runs.
               resetToMainScreen(now);
@@ -422,7 +447,7 @@ void loop() {
 
         // If we just got external data for the first time, schedule a single redraw.
         if (!firstExtRedrawDone && haveExtData) {
-          if (showMainScreen) {
+          if (isMainScreen()) {
             resetToMainScreen(now);
             firstExtRedrawDone    = true;
           } else {
@@ -440,7 +465,10 @@ void loop() {
     uint32_t forecastIntervalMs = (!midnightForecastPending && forecastCount > 0) ? FORECAST_FETCH_INTERVAL_MS : FORECAST_RETRY_INTERVAL_MS;
     const bool firstForecastAttempt = (forecastCount == 0 && lastForecastFetchMs == 0);
     if (midnightForecastPending || firstForecastAttempt || (now - lastForecastFetchMs) >= forecastIntervalMs) {
-      if (fetchForecast()) {
+      bool dailyOk = fetchForecast();
+      // Fetch hourly (today) data on the same schedule
+      bool hourlyOk = fetchHourlyForecast();
+      if (dailyOk || hourlyOk) {
         lastForecastSuccessMs   = now;
         midnightForecastPending = false;
       }

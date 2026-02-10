@@ -53,6 +53,8 @@ static char labelNoData1[16];
 static char labelNoData2[16];
 static char labelForecast[24];
 static char labelNoForecast[32];
+static char labelToday[16];
+static char labelNoHourly[32];
 static char unitLiters[8];
 static char unitKmh[12];
 
@@ -268,6 +270,107 @@ void drawForecastScreen() {
   tft.drawFastHLine(0, 135, tft.width(), ILI9341_DARKGREY);
 }
 
+/** @brief Time range labels for the 4 blocks. */
+static const char* const blockLabels[4] = {"00-06", "06-12", "12-18", "18-24"};
+
+/** @brief Render the today 6-hour forecast screen (2x2 grid). */
+void drawTodayScreen() {
+  tft.fillScreen(ILI9341_BLACK);
+
+  if (!haveTodayForecast) {
+    drawCenteredText(tft, labelToday, tft.width() / 2, 80, 3, ILI9341_WHITE);
+    drawCenteredText(tft, labelNoHourly, tft.width() / 2, 120, 3, ILI9341_YELLOW);
+    return;
+  }
+
+  const int cellW = tft.width() / 2;   // 160
+  const int cellH = tft.height() / 2;  // 120
+
+  // Grid separator lines
+  tft.drawFastVLine(cellW, 0, tft.height(), ILI9341_DARKGREY);
+  tft.drawFastVLine(cellW + 1, 0, tft.height(), ILI9341_DARKGREY);
+  tft.drawFastHLine(0, cellH, tft.width(), ILI9341_DARKGREY);
+  tft.drawFastHLine(0, cellH + 1, tft.width(), ILI9341_DARKGREY);
+
+  for (int b = 0; b < 4; b++) {
+    int col = b % 2;
+    int row = b / 2;
+    int x0  = col * cellW;
+    int y0  = row * cellH;
+    int cx  = x0 + cellW / 2;
+
+    // Time range label (+3px down)
+    drawCenteredText(tft, blockLabels[b], cx, y0 + 7, 2, ILI9341_CYAN);
+
+    if (!todayBlocks[b].valid) {
+      drawCenteredText(tft, "--", cx, y0 + 53, 2, ILI9341_DARKGREY);
+      continue;
+    }
+
+    // Weather icon (small)
+    DayIcon icon = pickDayIcon(
+      todayBlocks[b].tMax, todayBlocks[b].tMin,
+      todayBlocks[b].precip, todayBlocks[b].cloudMean,
+      todayBlocks[b].wmoCode
+    );
+    drawWeatherIconSmall(tft, cx, y0 + 29, icon);
+
+    // Temperature: "max / min" with drawn degree circles
+    char maxStr[8];
+    char minStr[8];
+    int tMaxI = (int)roundf(todayBlocks[b].tMax);
+    int tMinI = (int)roundf(todayBlocks[b].tMin);
+    snprintf(maxStr, sizeof(maxStr), "%d", tMaxI);
+    snprintf(minStr, sizeof(minStr), "%d", tMinI);
+
+    // Build "max / min" for centering calculation
+    char tempStr[20];
+    snprintf(tempStr, sizeof(tempStr), "%s  / %s ", maxStr, minStr);
+    float avgTemp = (todayBlocks[b].tMax + todayBlocks[b].tMin) / 2.0f;
+    int tempY = y0 + 70;
+    drawCenteredText(tft, tempStr, cx, tempY, 2, colorForTemperature(avgTemp));
+
+    // Draw degree circles after each number
+    // At size 2, each char is 12px wide, 16px tall
+    int tempTotalW = (int)strlen(tempStr) * 12;
+    int tempStartX = cx - tempTotalW / 2;
+    int maxEndX = tempStartX + (int)strlen(maxStr) * 12;
+    tft.drawCircle(maxEndX + 2, tempY + 1, 2, colorForTemperature(avgTemp));
+    int minEndX = tempStartX + ((int)strlen(maxStr) + 4 + (int)strlen(minStr)) * 12;
+    tft.drawCircle(minEndX + 2, tempY + 1, 2, colorForTemperature(avgTemp));
+
+    // Precipitation + Wind on bottom line
+    int rainI = (int)(todayBlocks[b].precip + 0.5f);
+    int windI = (int)(todayBlocks[b].windMax + 0.5f);
+
+    // Rain drop icon + value on left side of cell
+    int infoY = y0 + 99;
+    int dropX = x0 + 18;
+    tft.fillTriangle(dropX, infoY - 8, dropX - 4, infoY, dropX + 4, infoY, ILI9341_BLUE);
+    tft.fillCircle(dropX, infoY + 1, 3, ILI9341_BLUE);
+
+    char rainStr[8];
+    snprintf(rainStr, sizeof(rainStr), "%d", rainI);
+    tft.setTextSize(2);
+    tft.setTextColor(ILI9341_BLUE);
+    tft.setCursor(dropX + 8, infoY - 6);
+    tft.print(rainStr);
+
+    // Wind flag icon + value on right side of cell
+    int windRightX = x0 + cellW - 8;
+    // Small wind flag: a pole with a pennant
+    int flagX = x0 + cellW / 2 + 14;
+    int flagTopY = infoY - 8;
+    tft.drawFastVLine(flagX, flagTopY, 14, ILI9341_WHITE);           // pole
+    tft.fillTriangle(flagX + 1, flagTopY, flagX + 10, flagTopY + 3,
+                     flagX + 1, flagTopY + 6, ILI9341_WHITE);        // pennant
+
+    char windStr[8];
+    snprintf(windStr, sizeof(windStr), "%d", windI);
+    drawRightAlignedText(tft, windStr, windRightX, infoY - 6, 2, ILI9341_WHITE);
+  }
+}
+
 /**
  * @brief Initialize TFT display (rotation, text settings, clear screen).
  */
@@ -287,6 +390,8 @@ void initDisplay() {
   utf8rus("данни", labelNoData2, sizeof(labelNoData2));
   utf8rus("прогноза", labelForecast, sizeof(labelForecast));
   utf8rus("няма прогноза", labelNoForecast, sizeof(labelNoForecast));
+  utf8rus("днес", labelToday, sizeof(labelToday));
+  utf8rus("няма данни", labelNoHourly, sizeof(labelNoHourly));
   utf8rus(" Л", unitLiters, sizeof(unitLiters));
   utf8rus(" кмч", unitKmh, sizeof(unitKmh));
 

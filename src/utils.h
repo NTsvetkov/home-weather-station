@@ -43,6 +43,11 @@ void drawPressureBar(Adafruit_GFX& gfx, int x, int y, float pressure, int8_t tre
 void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon);
 
 /**
+ * @brief Draw a smaller weather icon (~60% scale) for the today screen.
+ */
+void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon);
+
+/**
  * @brief Compact wind label (auto-shrinks to fit in a forecast column).
  * @param text Example: "10 кмч"
  */

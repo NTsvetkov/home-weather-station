@@ -152,6 +152,65 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   }
 }
 
+/** @brief Draw a smaller weather icon (~60% scale) for the today screen. */
+void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
+  int baseY = topY + 16;
+  gfx.fillRect(centerX - 30, topY, 60, 40, ILI9341_BLACK);
+
+  bool isThunder = (icon == ICON_STORM);
+  bool isSnow    = (icon == ICON_SNOW);
+  bool isRain    = (icon == ICON_RAIN || icon == ICON_HEAVY_RAIN || icon == ICON_STORM);
+  bool isClear   = (icon == ICON_SUN);
+  bool isPartly  = (icon == ICON_PARTLY);
+  bool isCloudy  = (icon == ICON_CLOUDY || isRain || isSnow || isThunder || isPartly);
+
+  if (isClear || isPartly) {
+    int sunX = isPartly ? (centerX - 12) : centerX;
+    int sunY = isPartly ? (baseY - 6) : (baseY - 4);
+    int sunR = isPartly ? 8 : 10;
+    gfx.fillCircle(sunX, sunY, sunR, ILI9341_YELLOW);
+    constexpr float RAY_STEP = PI / 4.0f;
+    for (int i = 0; i < 8; i++) {
+      float angle = i * RAY_STEP;
+      int x1 = sunX + cos(angle) * (sunR + 3);
+      int y1 = sunY + sin(angle) * (sunR + 3);
+      int x2 = sunX + cos(angle) * (sunR + 7);
+      int y2 = sunY + sin(angle) * (sunR + 7);
+      gfx.drawLine(x1, y1, x2, y2, ILI9341_YELLOW);
+    }
+    if (isClear) return;
+  }
+
+  if (isCloudy || isRain || isSnow || isThunder) {
+    gfx.fillRoundRect(centerX - 19, baseY - 10, 38, 16, 5, ILI9341_LIGHTGREY);
+    gfx.fillCircle(centerX - 9, baseY - 10, 7, ILI9341_LIGHTGREY);
+    gfx.fillCircle(centerX + 6, baseY - 10, 8, ILI9341_LIGHTGREY);
+  }
+
+  if (isRain) {
+    gfx.fillRect(centerX - 11, baseY + 3, 2, 11, ILI9341_CYAN);
+    gfx.fillRect(centerX - 1, baseY + 4, 2, 11, ILI9341_CYAN);
+    gfx.fillRect(centerX + 9, baseY + 3, 2, 11, ILI9341_CYAN);
+  }
+  if (icon == ICON_HEAVY_RAIN) {
+    gfx.fillRect(centerX - 21, baseY + 2, 2, 12, ILI9341_CYAN);
+    gfx.fillRect(centerX + 19, baseY + 2, 2, 12, ILI9341_CYAN);
+  }
+
+  if (isSnow) {
+    gfx.drawLine(centerX - 8, baseY + 4, centerX - 3, baseY + 9, ILI9341_WHITE);
+    gfx.drawLine(centerX - 8, baseY + 9, centerX - 3, baseY + 4, ILI9341_WHITE);
+    gfx.drawLine(centerX + 3, baseY + 4, centerX + 8, baseY + 9, ILI9341_WHITE);
+    gfx.drawLine(centerX + 3, baseY + 9, centerX + 8, baseY + 4, ILI9341_WHITE);
+  }
+
+  if (isThunder) {
+    gfx.drawLine(centerX - 4, baseY - 4, centerX + 1, baseY + 4, ILI9341_YELLOW);
+    gfx.drawLine(centerX + 1, baseY + 4, centerX - 4, baseY + 4, ILI9341_YELLOW);
+    gfx.drawLine(centerX - 4, baseY + 4, centerX + 4, baseY + 13, ILI9341_YELLOW);
+  }
+}
+
 /** @brief Draw compact wind speed label (auto-shrinks to fit column). */
 void drawWindLabel(Adafruit_GFX& gfx, int colLeft, int colRight, int y, const char* text) {
   const int colW = colRight - colLeft;

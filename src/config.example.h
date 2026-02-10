@@ -66,6 +66,13 @@
 // ArduinoJson document capacity
 #define CFG_FORECAST_JSON_DOC_CAPACITY     8000
 
+// Today screen duration
+#define CFG_TODAY_SCREEN_DURATION_MS       10000UL
+
+// ArduinoJson document capacity for hourly forecast
+#define CFG_HOURLY_JSON_DOC_CAPACITY       4000
+
 // Endpoints
 #define CFG_GAUGE_URL    "https://meter.ac/gs/nodes/N200/gauge.txt"
 #define CFG_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,cloud_cover_mean&models=ecmwf_ifs&timezone=auto"
+#define CFG_HOURLY_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&hourly=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&forecast_days=1&models=ecmwf_ifs&timezone=auto"

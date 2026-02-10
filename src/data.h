@@ -52,6 +52,24 @@ extern ForecastDay forecast[3];
 extern int forecastCount;
 
 /**
+ * @brief One 6-hour block of today's forecast (aggregated from hourly data).
+ */
+struct ForecastBlock {
+  float tMin;        ///< minimum temperature in block (C)
+  float tMax;        ///< maximum temperature in block (C)
+  float precip;      ///< total precipitation in block (mm)
+  float windMax;     ///< maximum wind speed in block (km/h)
+  float cloudMean;   ///< mean cloud cover in block (%)
+  int wmoCode;       ///< most severe WMO weather code in block
+  bool valid;
+};
+
+/** @brief Today's forecast split into 4 blocks: 00-06, 06-12, 12-18, 18-24. */
+extern ForecastBlock todayBlocks[4];
+/** @brief True when todayBlocks[] contain valid data. */
+extern bool haveTodayForecast;
+
+/**
  * @brief Fetch outdoor data from meter.ac gauge endpoint.
  * @return true if parsing succeeded and ext* values were updated.
  */
@@ -62,3 +80,9 @@ bool fetchGaugeData();
  * @return true if at least one forecast day is available.
  */
 bool fetchForecast();
+
+/**
+ * @brief Fetch today's hourly forecast and aggregate into 6-hour blocks.
+ * @return true if at least one block was populated.
+ */
+bool fetchHourlyForecast();

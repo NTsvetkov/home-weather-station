@@ -45,6 +45,12 @@
 #ifndef CFG_FORECAST_JSON_DOC_CAPACITY
   #define CFG_FORECAST_JSON_DOC_CAPACITY 8000
 #endif
+#ifndef CFG_HOURLY_FORECAST_URL
+  #define CFG_HOURLY_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&hourly=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&forecast_days=1&models=ecmwf_ifs&timezone=auto"
+#endif
+#ifndef CFG_HOURLY_JSON_DOC_CAPACITY
+  #define CFG_HOURLY_JSON_DOC_CAPACITY 4000
+#endif
 
 // Trend window is configured in config.h (minutes).
 // We expect it as a macro (so every translation unit sees the same value).
@@ -77,6 +83,9 @@ float intHumidity    = 0.0f;
 
 ForecastDay forecast[3];
 int forecastCount = 0;
+
+ForecastBlock todayBlocks[4];
+bool haveTodayForecast = false;
 
 /* -------------------------------------------------------------------------- */
 /*                         Outdoor Trend History                              */
@@ -366,4 +375,135 @@ bool fetchForecast() {
 
   LOG_I("Forecast: %d days loaded", forecastCount);
   return forecastCount > 0;
+}
+
+/**
+ * @brief Return the "severity" of a WMO weather code (higher = worse).
+ *
+ * Used to pick the most significant code within a 6-hour block.
+ */
+static int wmoSeverity(int code) {
+  if (code == 95 || code == 96 || code == 99) return 5; // thunderstorm
+  if (code >= 61 && code <= 67) return 4;               // rain moderate/heavy
+  if (code >= 71 && code <= 77) return 4;               // snow moderate/heavy
+  if (code >= 80 && code <= 82) return 4;               // showers
+  if (code >= 51 && code <= 57) return 3;               // drizzle
+  if (code >= 85 && code <= 86) return 3;               // snow showers
+  if (code == 3) return 2;                              // overcast
+  if (code == 2) return 1;                              // partly cloudy
+  if (code == 1) return 1;                              // mainly clear
+  return 0;                                             // clear
+}
+
+/**
+ * @brief Fetch today's hourly forecast and aggregate into 4 six-hour blocks.
+ * @return true if at least one block was populated.
+ */
+bool fetchHourlyForecast() {
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(CFG_TLS_RX_BUFFER_BYTES_FORECAST, CFG_TLS_TX_BUFFER_BYTES_FORECAST);
+
+  HTTPClient https;
+  if (!https.begin(client, CFG_HOURLY_FORECAST_URL)) {
+    LOG_E("Hourly: begin() failed");
+    return false;
+  }
+
+  https.useHTTP10(true);
+  https.addHeader("Accept-Encoding", "identity");
+
+  int httpCode = https.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    LOG_W("Hourly: HTTP %d", httpCode);
+    https.end();
+    return false;
+  }
+
+  StaticJsonDocument<256> filter;
+  JsonObject hourlyFilter             = filter["hourly"].to<JsonObject>();
+  hourlyFilter["time"]                = true;
+  hourlyFilter["temperature_2m"]      = true;
+  hourlyFilter["precipitation"]       = true;
+  hourlyFilter["weather_code"]        = true;
+  hourlyFilter["cloud_cover"]         = true;
+  hourlyFilter["wind_speed_10m"]      = true;
+
+  DynamicJsonDocument doc(CFG_HOURLY_JSON_DOC_CAPACITY);
+  WiFiClient* stream       = https.getStreamPtr();
+  DeserializationError err = deserializeJson(doc, *stream, DeserializationOption::Filter(filter));
+  https.end();
+
+  if (err) {
+    LOG_E("Hourly: JSON error - %s", err.c_str());
+    return false;
+  }
+
+  JsonArray tempArr  = doc["hourly"]["temperature_2m"].as<JsonArray>();
+  JsonArray precArr  = doc["hourly"]["precipitation"].as<JsonArray>();
+  JsonArray codeArr  = doc["hourly"]["weather_code"].as<JsonArray>();
+  JsonArray cloudArr = doc["hourly"]["cloud_cover"].as<JsonArray>();
+  JsonArray windArr  = doc["hourly"]["wind_speed_10m"].as<JsonArray>();
+
+  if (!tempArr || !precArr || !codeArr || !cloudArr || !windArr) {
+    LOG_E("Hourly: missing arrays in response");
+    return false;
+  }
+
+  // Initialize blocks
+  for (int b = 0; b < 4; b++) {
+    todayBlocks[b].tMin      = 999.0f;
+    todayBlocks[b].tMax      = -999.0f;
+    todayBlocks[b].precip    = 0.0f;
+    todayBlocks[b].windMax   = 0.0f;
+    todayBlocks[b].cloudMean = 0.0f;
+    todayBlocks[b].wmoCode   = 0;
+    todayBlocks[b].valid     = false;
+  }
+
+  int blockCounts[4] = {0, 0, 0, 0};
+  int worstSeverity[4] = {0, 0, 0, 0};
+
+  // Aggregate hourly values into 6-hour blocks
+  size_t count = tempArr.size();
+  if (count > 24) count = 24;
+
+  for (size_t h = 0; h < count; h++) {
+    int block = (int)h / 6; // 0-5→0, 6-11→1, 12-17→2, 18-23→3
+    if (block >= 4) break;
+
+    float t = tempArr[h].as<float>();
+    float p = precArr[h].as<float>();
+    int   c = codeArr[h].as<int>();
+    float cl = cloudArr[h].as<float>();
+    float w = windArr[h].as<float>();
+
+    if (t < todayBlocks[block].tMin) todayBlocks[block].tMin = t;
+    if (t > todayBlocks[block].tMax) todayBlocks[block].tMax = t;
+    todayBlocks[block].precip += p;
+    if (w > todayBlocks[block].windMax) todayBlocks[block].windMax = w;
+    todayBlocks[block].cloudMean += cl;
+
+    int sev = wmoSeverity(c);
+    if (sev > worstSeverity[block]) {
+      worstSeverity[block] = sev;
+      todayBlocks[block].wmoCode = c;
+    }
+
+    blockCounts[block]++;
+    todayBlocks[block].valid = true;
+  }
+
+  // Average out cloud cover
+  int validBlocks = 0;
+  for (int b = 0; b < 4; b++) {
+    if (blockCounts[b] > 0) {
+      todayBlocks[b].cloudMean /= (float)blockCounts[b];
+      validBlocks++;
+    }
+  }
+
+  haveTodayForecast = (validBlocks > 0);
+  LOG_I("Hourly: %d blocks loaded", validBlocks);
+  return haveTodayForecast;
 }
