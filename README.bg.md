@@ -19,7 +19,7 @@
 | Компонент | Описание |
 |-----------|----------|
 | NodeMCU v3 | ESP8266 платка за разработка |
-| ILI9341 | 2.4" TFT LCD дисплей (240x320, SPI) |
+| ILI9341 или ST7789 | 2.4" TFT LCD дисплей (240x320, SPI) |
 | AHT20 | Сензор за температура и влажност (I2C) |
 
 ### Схема на свързване
@@ -37,7 +37,7 @@
 
 #### Връзки на пиновете
 
-**TFT дисплей (ILI9341) → NodeMCU:**
+**TFT дисплей (ILI9341 / ST7789) → NodeMCU:**
 
 | Дисплей | NodeMCU | GPIO |
 |---------|---------|------|
@@ -85,9 +85,13 @@
    #define WIFI_PASS "твоята-парола"
    ```
 
-4. **Компилирай и качи:**
+4. **Компилирай и качи** (по подразбиране: ST7789):
    ```bash
    pio run -t upload
+   ```
+   За ILI9341 компилирай съответната среда:
+   ```bash
+   pio run -e nodemcuv2_ili9341 -t upload
    ```
 
 5. **Следи серийния изход (по желание):**
@@ -110,6 +114,47 @@
 | `CFG_TODAY_SCREEN_DURATION_MS` | 10000 | Време на екран с дневна прогноза (ms) |
 | `CFG_GAUGE_FETCH_INTERVAL_MS` | 180000 | Опресняване на външни данни (3 мин) |
 | `CFG_FORECAST_FETCH_INTERVAL_MS` | 3600000 | Опресняване на прогноза (1 час) |
+
+### Дисплей драйвер
+
+Проектът поддържа **ILI9341** и **ST7789** TFT дисплеи. В `platformio.ini` са дефинирани две среди:
+
+| Среда | Дисплей | Build флаг |
+|-------|---------|------------|
+| `nodemcuv2_st7789` (по подразбиране) | ST7789 | `-DDISPLAY_ST7789` |
+| `nodemcuv2_ili9341` | ILI9341 | `-DDISPLAY_ILI9341` |
+
+За смяна на дисплея промени `default_envs` в `platformio.ini`:
+```ini
+[platformio]
+default_envs = nodemcuv2_ili9341
+```
+Или компилирай директно конкретна среда:
+```bash
+pio run -e nodemcuv2_ili9341
+```
+
+Абстракцията е в `src/display_config.h` — условно включва правилната библиотека, дефинира `TftDriver` typedef и унифицирани `CLR_*` цветови константи.
+
+#### Хардуерни версии
+
+| | v1.2 (ILI9341) | v1.3 (ST7789) |
+|-|----------------|---------------|
+| Размер | 2.8" | 2.4" |
+| Резолюция | 240×320 | 240×320 |
+| SD карта слот | Да | Не |
+| Окабеляване | еднакво | еднакво |
+| PlatformIO среда | `nodemcuv2_ili9341` | `nodemcuv2_st7789` |
+
+| v1.2 — ILI9341 | v1.3 — ST7789 |
+|----------------|---------------|
+| ![v1.2](docs/v1.2.jpg) | ![v1.3](docs/v1.3.jpg) |
+
+И двете платки използват едно и също SPI окабеляване — не е нужно да се сменят връзките при смяна на дисплея.
+
+### Кирилски шрифт
+
+Стандартният шрифт на Adafruit GFX (`glcdfont.c`) не съдържа кирилски символи. Pre-build скрипт (`scripts/patch_font.py`) автоматично добавя кирилски глифове (Windows-1251: А-я, Ё, ё) преди всяка компилация. Не са нужни ръчни стъпки — пачът се прилага автоматично и се пропуска ако вече е наличен.
 
 ### Източници на данни
 
@@ -139,25 +184,27 @@
 
 ```
 ├── src/
-│   ├── main.cpp          # Основна логика
-│   ├── config.h          # Твоята конфигурация (в .gitignore)
-│   ├── config.example.h  # Шаблон за конфигурация
-│   ├── display.cpp/h     # Функции за рисуване на TFT
-│   ├── data.cpp/h        # Структури и извличане на данни
-│   ├── sensors.cpp/h     # Работа с AHT20 сензора
-│   └── utils.cpp/h       # Помощни функции
-├── lib/
-│   └── TFT_eSPI/         # Конфигурация на дисплей библиотеката
-├── docs/                 # Документация и снимки
-└── platformio.ini        # PlatformIO конфигурация
+│   ├── main.cpp            # Основна логика
+│   ├── config.h            # Твоята конфигурация (в .gitignore)
+│   ├── config.example.h    # Шаблон за конфигурация
+│   ├── display_config.h    # Абстракция на дисплей драйвера (ILI9341/ST7789)
+│   ├── display.cpp/h       # Функции за рисуване на TFT
+│   ├── data.cpp/h          # Структури и извличане на данни
+│   ├── sensors.cpp/h       # Работа с AHT20 сензора
+│   └── utils.cpp/h         # Помощни функции
+├── scripts/
+│   └── patch_font.py       # Pre-build скрипт за кирилски шрифт
+├── docs/                   # Документация и снимки
+└── platformio.ini          # PlatformIO конфигурация
 ```
 
 ## Зависимости
 
 Управляват се автоматично от PlatformIO:
 
-- [Adafruit ILI9341](https://github.com/adafruit/Adafruit_ILI9341)
 - [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library)
+- [Adafruit ST7735 and ST7789](https://github.com/adafruit/Adafruit-ST7735-Library) (ST7789 среда)
+- [Adafruit ILI9341](https://github.com/adafruit/Adafruit_ILI9341) (ILI9341 среда)
 - [Adafruit AHTX0](https://github.com/adafruit/Adafruit_AHTX0)
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson)
 

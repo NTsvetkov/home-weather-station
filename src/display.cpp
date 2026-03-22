@@ -1,8 +1,6 @@
 #include <Arduino.h>
 
-#include <Adafruit_GFX.h>
-#include <Adafruit_ILI9341.h>
-
+#include "display_config.h"
 #include "display.h"
 #include "data.h"
 #include "utils.h"
@@ -44,7 +42,7 @@ static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudM
 #define TFT_RST   D3
 #define TFT_DC    D4
 
-static Adafruit_ILI9341 tft(TFT_CS, TFT_DC, TFT_RST);
+static TftDriver tft(TFT_CS, TFT_DC, TFT_RST);
 
 // Pre-converted Cyrillic labels (initialized once in initDisplay()).
 static char labelOutside[16];
@@ -128,26 +126,26 @@ static void formatPercent0(char* out, size_t outLen, float value) {
 
 /** @brief Pick a UI color for a temperature value (C). */
 uint16_t colorForTemperature(float tempC) {
-  if (tempC < 10) return ILI9341_CYAN;
-  if (tempC < 18) return ILI9341_BLUE;
-  if (tempC <= 25) return ILI9341_GREEN;
-  if (tempC <= 30) return ILI9341_ORANGE;
+  if (tempC < 10) return CLR_CYAN;
+  if (tempC < 18) return CLR_BLUE;
+  if (tempC <= 25) return CLR_GREEN;
+  if (tempC <= 30) return CLR_ORANGE;
 
-  return ILI9341_RED;
+  return CLR_RED;
 }
 
 /** @brief Pick a UI color for a humidity value (%). */
 uint16_t colorForHumidity(float humidity) {
-  if (humidity < 30) return ILI9341_CYAN;
-  if (humidity < 40) return ILI9341_BLUE;
-  if (humidity <= 60) return ILI9341_GREEN;
-  if (humidity <= 70) return ILI9341_ORANGE;
+  if (humidity < 30) return CLR_CYAN;
+  if (humidity < 40) return CLR_BLUE;
+  if (humidity <= 60) return CLR_GREEN;
+  if (humidity <= 70) return CLR_ORANGE;
 
-  return ILI9341_RED;
+  return CLR_RED;
 }
 /** @brief Render the main readings screen. */
 void drawMainScreen() {
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(CLR_BLACK);
 
   const int leftCenterX  = tft.width() / 4;
   const int rightCenterX = (tft.width() * 3) / 4;
@@ -158,16 +156,16 @@ void drawMainScreen() {
 
   int midX           = tft.width() / 2;
   int verticalHeight = 175;
-  tft.drawFastVLine(midX, 0, verticalHeight, ILI9341_DARKGREY);
-  tft.drawFastVLine(midX + 1, 0, verticalHeight, ILI9341_DARKGREY);
-  tft.drawFastHLine(0, 35, tft.width(), ILI9341_DARKGREY);
-  tft.drawFastHLine(0, 36, tft.width(), ILI9341_DARKGREY);
-  tft.drawFastHLine(0, 115, tft.width(), ILI9341_DARKGREY);
-  tft.drawFastHLine(0, 116, tft.width(), ILI9341_DARKGREY);
-  tft.drawFastHLine(0, 175, tft.width(), ILI9341_DARKGREY);
-  tft.drawFastHLine(0, 176, tft.width(), ILI9341_DARKGREY);
+  tft.drawFastVLine(midX, 0, verticalHeight, CLR_DARKGREY);
+  tft.drawFastVLine(midX + 1, 0, verticalHeight, CLR_DARKGREY);
+  tft.drawFastHLine(0, 35, tft.width(), CLR_DARKGREY);
+  tft.drawFastHLine(0, 36, tft.width(), CLR_DARKGREY);
+  tft.drawFastHLine(0, 115, tft.width(), CLR_DARKGREY);
+  tft.drawFastHLine(0, 116, tft.width(), CLR_DARKGREY);
+  tft.drawFastHLine(0, 175, tft.width(), CLR_DARKGREY);
+  tft.drawFastHLine(0, 176, tft.width(), CLR_DARKGREY);
 
-  drawCenteredText(tft, labelOutside, leftCenterX, labelY, 3, ILI9341_WHITE);
+  drawCenteredText(tft, labelOutside, leftCenterX, labelY, 3, CLR_WHITE);
   if (haveExtData) {
     // Format so values like -10.0, 12.3 always fit in the cell
     char extTempStr[16];
@@ -185,11 +183,11 @@ void drawMainScreen() {
     drawRightAlignedText(tft, extHumStr, midX - 10, humidityY, 4, colorForHumidity(extHumidity));
     drawTrendIndicator(tft, triX, extHumY + 30, extHumTrend);
   } else {
-    drawCenteredText(tft, labelNoData1, leftCenterX, tempY, 3, ILI9341_YELLOW);
-    drawCenteredText(tft, labelNoData2, leftCenterX, tempY + 26, 3, ILI9341_YELLOW);
+    drawCenteredText(tft, labelNoData1, leftCenterX, tempY, 3, CLR_YELLOW);
+    drawCenteredText(tft, labelNoData2, leftCenterX, tempY + 26, 3, CLR_YELLOW);
   }
 
-  drawCenteredText(tft, labelInside, rightCenterX, labelY, 3, ILI9341_WHITE);
+  drawCenteredText(tft, labelInside, rightCenterX, labelY, 3, CLR_WHITE);
   if (haveIntData) {
     // Keep indoor temperature formatting as before (no need for negative-fit logic here)
     char intTempStr[16];
@@ -200,8 +198,8 @@ void drawMainScreen() {
     formatPercent0(intHumStr, sizeof(intHumStr), intHumidity);
     drawCenteredText(tft, intHumStr, rightCenterX, humidityY, 4, colorForHumidity(intHumidity));
   } else {
-    drawCenteredText(tft, labelNoData1, rightCenterX, tempY, 3, ILI9341_YELLOW);
-    drawCenteredText(tft, labelNoData2, rightCenterX, tempY + 26, 3, ILI9341_YELLOW);
+    drawCenteredText(tft, labelNoData1, rightCenterX, tempY, 3, CLR_YELLOW);
+    drawCenteredText(tft, labelNoData2, rightCenterX, tempY + 26, 3, CLR_YELLOW);
   }
 
   if (haveExtData) drawPressureBar(tft, 20, 190, extPressure, extPressTrend);
@@ -209,13 +207,13 @@ void drawMainScreen() {
 
 /** @brief Render the forecast screen. */
 void drawForecastScreen() {
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(CLR_BLACK);
 
-  drawCenteredText(tft, labelForecast, tft.width() / 2, 4, 3, ILI9341_WHITE);
-  tft.drawFastHLine(0, 35, tft.width(), ILI9341_DARKGREY); // line under title
+  drawCenteredText(tft, labelForecast, tft.width() / 2, 4, 3, CLR_WHITE);
+  tft.drawFastHLine(0, 35, tft.width(), CLR_DARKGREY); // line under title
 
   if (forecastCount == 0) {
-    drawCenteredText(tft, labelNoForecast, tft.width() / 2, 120, 3, ILI9341_YELLOW);
+    drawCenteredText(tft, labelNoForecast, tft.width() / 2, 120, 3, CLR_YELLOW);
 
     return;
   }
@@ -229,7 +227,7 @@ void drawForecastScreen() {
 
     char dayLabel[8];
     formatDateLabelDDMM(forecast[i].label, dayLabel, sizeof(dayLabel));
-    drawCenteredText(tft, dayLabel, colCenter, 45, 2, ILI9341_CYAN);
+    drawCenteredText(tft, dayLabel, colCenter, 45, 2, CLR_CYAN);
     DayIcon icon = pickDayIcon(forecast[i].tMax, forecast[i].tMin, forecast[i].precip, forecast[i].cloudMean, forecast[i].wmoCode);
     drawWeatherIcon(tft, colCenter, 72, icon);
 
@@ -242,20 +240,19 @@ void drawForecastScreen() {
     snprintf(rainStr, sizeof(rainStr), "%d%s", rainLiters, unitLiters);
 
     // Numbers a bit higher to free space for a readable wind badge
-    drawRightAlignedText(tft, maxStr, colRight, 146, 2, ILI9341_WHITE);
-    drawRightAlignedText(tft, minStr, colRight, 168, 2, ILI9341_WHITE);
+    drawRightAlignedText(tft, maxStr, colRight, 146, 2, CLR_WHITE);
+    drawRightAlignedText(tft, minStr, colRight, 168, 2, CLR_WHITE);
 
     int rainY = 196;
     int dropX = colRight - 90; // move left to avoid overlapping text
-    tft.fillTriangle(dropX, rainY - 12, dropX - 6, rainY - 2, dropX + 6, rainY - 2, ILI9341_BLUE);
-    tft.fillCircle(dropX, rainY - 1, 4, ILI9341_BLUE);
-    drawRightAlignedText(tft, rainStr, colRight, rainY - 6, 2, ILI9341_BLUE);
+    tft.fillTriangle(dropX, rainY - 12, dropX - 6, rainY - 2, dropX + 6, rainY - 2, CLR_BLUE);
+    tft.fillCircle(dropX, rainY - 1, 4, CLR_BLUE);
+    drawRightAlignedText(tft, rainStr, colRight, rainY - 6, 2, CLR_BLUE);
 
     // Wind (compact): e.g. "10 km". Auto-shrinks if needed.
     char windStr[24];
     snprintf(windStr, sizeof(windStr), "%d%s", (int)(forecast[i].windMax + 0.5f), unitKmh);
     drawWindLabel(tft, colStart + 6, colRight, 212, windStr);
-
   }
 
   // vertical separators between days
@@ -263,11 +260,11 @@ void drawForecastScreen() {
   int sepYBottom = 240;
   for (int i = 1; i < 3; i++) {
     int x = i * colW;
-    tft.drawFastVLine(x, sepYTop, sepYBottom - sepYTop, ILI9341_DARKGREY);
+    tft.drawFastVLine(x, sepYTop, sepYBottom - sepYTop, CLR_DARKGREY);
   }
 
   // horizontal line under icons
-  tft.drawFastHLine(0, 135, tft.width(), ILI9341_DARKGREY);
+  tft.drawFastHLine(0, 135, tft.width(), CLR_DARKGREY);
 }
 
 /** @brief Time range labels for the 4 blocks. */
@@ -275,11 +272,11 @@ static const char* const blockLabels[4] = {"00-06", "06-12", "12-18", "18-24"};
 
 /** @brief Render the today 6-hour forecast screen (2x2 grid). */
 void drawTodayScreen() {
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(CLR_BLACK);
 
   if (!haveTodayForecast) {
-    drawCenteredText(tft, labelToday, tft.width() / 2, 80, 3, ILI9341_WHITE);
-    drawCenteredText(tft, labelNoHourly, tft.width() / 2, 120, 3, ILI9341_YELLOW);
+    drawCenteredText(tft, labelToday, tft.width() / 2, 80, 3, CLR_WHITE);
+    drawCenteredText(tft, labelNoHourly, tft.width() / 2, 120, 3, CLR_YELLOW);
     return;
   }
 
@@ -287,10 +284,10 @@ void drawTodayScreen() {
   const int cellH = tft.height() / 2;  // 120
 
   // Grid separator lines
-  tft.drawFastVLine(cellW, 0, tft.height(), ILI9341_DARKGREY);
-  tft.drawFastVLine(cellW + 1, 0, tft.height(), ILI9341_DARKGREY);
-  tft.drawFastHLine(0, cellH, tft.width(), ILI9341_DARKGREY);
-  tft.drawFastHLine(0, cellH + 1, tft.width(), ILI9341_DARKGREY);
+  tft.drawFastVLine(cellW, 0, tft.height(), CLR_DARKGREY);
+  tft.drawFastVLine(cellW + 1, 0, tft.height(), CLR_DARKGREY);
+  tft.drawFastHLine(0, cellH, tft.width(), CLR_DARKGREY);
+  tft.drawFastHLine(0, cellH + 1, tft.width(), CLR_DARKGREY);
 
   for (int b = 0; b < 4; b++) {
     int col = b % 2;
@@ -300,10 +297,10 @@ void drawTodayScreen() {
     int cx  = x0 + cellW / 2;
 
     // Time range label (+3px down)
-    drawCenteredText(tft, blockLabels[b], cx, y0 + 7, 2, ILI9341_CYAN);
+    drawCenteredText(tft, blockLabels[b], cx, y0 + 7, 2, CLR_CYAN);
 
     if (!todayBlocks[b].valid) {
-      drawCenteredText(tft, "--", cx, y0 + 53, 2, ILI9341_DARKGREY);
+      drawCenteredText(tft, "--", cx, y0 + 53, 2, CLR_DARKGREY);
       continue;
     }
 
@@ -346,13 +343,13 @@ void drawTodayScreen() {
     // Rain drop icon + value on left side of cell
     int infoY = y0 + 99;
     int dropX = x0 + 18;
-    tft.fillTriangle(dropX, infoY - 8, dropX - 4, infoY, dropX + 4, infoY, ILI9341_BLUE);
-    tft.fillCircle(dropX, infoY + 1, 3, ILI9341_BLUE);
+    tft.fillTriangle(dropX, infoY - 8, dropX - 4, infoY, dropX + 4, infoY, CLR_BLUE);
+    tft.fillCircle(dropX, infoY + 1, 3, CLR_BLUE);
 
     char rainStr[8];
     snprintf(rainStr, sizeof(rainStr), "%d", rainI);
     tft.setTextSize(2);
-    tft.setTextColor(ILI9341_BLUE);
+    tft.setTextColor(CLR_BLUE);
     tft.setCursor(dropX + 8, infoY - 6);
     tft.print(rainStr);
 
@@ -361,13 +358,13 @@ void drawTodayScreen() {
     // Small wind flag: a pole with a pennant
     int flagX = x0 + cellW / 2 + 14;
     int flagTopY = infoY - 8;
-    tft.drawFastVLine(flagX, flagTopY, 14, ILI9341_WHITE);           // pole
+    tft.drawFastVLine(flagX, flagTopY, 14, CLR_WHITE);           // pole
     tft.fillTriangle(flagX + 1, flagTopY, flagX + 10, flagTopY + 3,
-                     flagX + 1, flagTopY + 6, ILI9341_WHITE);        // pennant
+                     flagX + 1, flagTopY + 6, CLR_WHITE);        // pennant
 
     char windStr[8];
     snprintf(windStr, sizeof(windStr), "%d", windI);
-    drawRightAlignedText(tft, windStr, windRightX, infoY - 6, 2, ILI9341_WHITE);
+    drawRightAlignedText(tft, windStr, windRightX, infoY - 6, 2, CLR_WHITE);
   }
 }
 
@@ -375,13 +372,19 @@ void drawTodayScreen() {
  * @brief Initialize TFT display (rotation, text settings, clear screen).
  */
 void initDisplay() {
+#if defined(DISPLAY_ST7789)
+  tft.init(240, 320);           // ST7789: explicit panel resolution
+  tft.invertDisplay(false);     // ST7789 defaults to inverted; undo for this panel
+  tft.setRotation(3);           // Landscape 320x240
+#elif defined(DISPLAY_ILI9341)
   tft.begin();
-  tft.setRotation(1);
-  // The project relies on a single-byte Cyrillic mapping (see utf8rus()).
-  // Ensure CP437 remapping is disabled so bytes are used as-is.
+  tft.setRotation(1);           // Landscape 320x240
+#endif
+  // cp437(false) = classic mode: chars >= 176 get c++ in drawChar().
+  // This matches the utf8rus() mapping where А = 0xBF -> font pos 0xC0.
   tft.cp437(false);
   tft.setTextWrap(false);
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(CLR_BLACK);
 
   // Pre-convert all Cyrillic labels once at startup.
   utf8rus("навън", labelOutside, sizeof(labelOutside));
