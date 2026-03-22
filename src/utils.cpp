@@ -1,6 +1,6 @@
 #include "utils.h"
+#include "display_config.h"
 
-#include <Adafruit_ILI9341.h>
 #include <math.h>
 
 /**
@@ -43,13 +43,13 @@ void drawTrendIndicator(Adafruit_GFX& gfx, int x, int y, int8_t trend) {
   const int s = 12;
   if (trend > 0) {
     // Up
-    gfx.fillTriangle(x, y + s, x + (s / 2), y, x + s, y + s, ILI9341_GREEN);
+    gfx.fillTriangle(x, y + s, x + (s / 2), y, x + s, y + s, CLR_GREEN);
   } else if (trend < 0) {
     // Down
-    gfx.fillTriangle(x, y, x + (s / 2), y + s, x + s, y, ILI9341_RED);
+    gfx.fillTriangle(x, y, x + (s / 2), y + s, x + s, y, CLR_RED);
   } else {
     // Steady -> right
-    gfx.fillTriangle(x, y, x + s, y + (s / 2), x, y + s, ILI9341_DARKGREY);
+    gfx.fillTriangle(x, y, x + s, y + (s / 2), x, y + s, CLR_DARKGREY);
   }
 }
 
@@ -58,11 +58,11 @@ void drawPressureBar(Adafruit_GFX& gfx, int x, int y, float pressure, int8_t tre
   int barWidthMax = gfx.width() - (2 * x);
   if (barWidthMax < 50) barWidthMax = gfx.width() - 40;
 
-  gfx.drawRect(x, y, barWidthMax, 20, ILI9341_WHITE);
+  gfx.drawRect(x, y, barWidthMax, 20, CLR_WHITE);
 
   int barWidth = map((int)pressure, 970, 1050, 0, barWidthMax);
   barWidth = constrain(barWidth, 0, barWidthMax);
-  gfx.fillRect(x, y, barWidth, 20, ILI9341_GREEN);
+  gfx.fillRect(x, y, barWidth, 20, CLR_GREEN);
 
   // Format pressure as "1013.2 hPa" without heap allocations.
   const int p10  = (int)roundf(pressure * 10.0f);
@@ -73,7 +73,7 @@ void drawPressureBar(Adafruit_GFX& gfx, int x, int y, float pressure, int8_t tre
   gfx.setTextSize(3);
   const uint16_t w = classicTextWidthPx(pStr, 3);
   int textX = x + (barWidthMax / 2) - ((int)w / 2);
-  gfx.setTextColor(ILI9341_WHITE);
+  gfx.setTextColor(CLR_WHITE);
   gfx.setCursor(textX, y + 26);
   gfx.print(pStr);
 
@@ -85,7 +85,7 @@ void drawPressureBar(Adafruit_GFX& gfx, int x, int y, float pressure, int8_t tre
 void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   // Slightly smaller icon block (more room for numbers and wind)
   int baseY = topY + 25;
-  gfx.fillRect(centerX - 45, topY, 90, 60, ILI9341_BLACK);
+  gfx.fillRect(centerX - 45, topY, 90, 60, CLR_BLACK);
 
   bool isThunder = (icon == ICON_STORM);
   bool isSnow    = (icon == ICON_SNOW);
@@ -101,7 +101,7 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
     int sunY = isPartly ? (baseY - 9) : (baseY - 6);
     // Make the sun a bit larger for "partly" so it remains clearly visible.
     int sunR = isPartly ? 14 : 16;
-    gfx.fillCircle(sunX, sunY, sunR, ILI9341_YELLOW);
+    gfx.fillCircle(sunX, sunY, sunR, CLR_YELLOW);
     constexpr float RAY_STEP = PI / 4.0f;
     for (int i = 0; i < 8; i++) {
       float angle = i * RAY_STEP;
@@ -110,8 +110,8 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
       int x2 = sunX + cos(angle) * (sunR + 11);
       int y2 = sunY + sin(angle) * (sunR + 11);
       // Thicker rays (draw twice with a 1px offset)
-      gfx.drawLine(x1, y1, x2, y2, ILI9341_YELLOW);
-      gfx.drawLine(x1 + 1, y1, x2 + 1, y2, ILI9341_YELLOW);
+      gfx.drawLine(x1, y1, x2, y2, CLR_YELLOW);
+      gfx.drawLine(x1 + 1, y1, x2 + 1, y2, CLR_YELLOW);
     }
     if (isClear) return;
     // if partly cloudy -> continue and draw cloud on top
@@ -120,42 +120,42 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   // cloud base
   if (isCloudy || isRain || isSnow || isThunder) {
     // Slightly smaller clouds so the sun in "partly" icons remains visible.
-    gfx.fillRoundRect(centerX - 31, baseY - 17, 62, 26, 8, ILI9341_LIGHTGREY);
-    gfx.fillCircle(centerX - 15, baseY - 17, 11, ILI9341_LIGHTGREY);
-    gfx.fillCircle(centerX + 10, baseY - 17, 13, ILI9341_LIGHTGREY);
+    gfx.fillRoundRect(centerX - 31, baseY - 17, 62, 26, 8, CLR_LIGHTGREY);
+    gfx.fillCircle(centerX - 15, baseY - 17, 11, CLR_LIGHTGREY);
+    gfx.fillCircle(centerX + 10, baseY - 17, 13, CLR_LIGHTGREY);
   }
 
   if (isRain) {
     // Thicker rain streaks (3px) so they remain readable on the TFT.
     // Using fillRect also makes them look smoother than single-pixel lines.
-    gfx.fillRect(centerX - 18, baseY + 4, 3, 18, ILI9341_CYAN);
-    gfx.fillRect(centerX - 2, baseY + 6, 3, 18, ILI9341_CYAN);
-    gfx.fillRect(centerX + 14, baseY + 4, 3, 18, ILI9341_CYAN);
+    gfx.fillRect(centerX - 18, baseY + 4, 3, 18, CLR_CYAN);
+    gfx.fillRect(centerX - 2, baseY + 6, 3, 18, CLR_CYAN);
+    gfx.fillRect(centerX + 14, baseY + 4, 3, 18, CLR_CYAN);
   }
   if (icon == ICON_HEAVY_RAIN) {
     // Extra streaks for heavy rain
-    gfx.fillRect(centerX - 34, baseY + 2, 3, 20, ILI9341_CYAN);
-    gfx.fillRect(centerX + 31, baseY + 2, 3, 20, ILI9341_CYAN);
+    gfx.fillRect(centerX - 34, baseY + 2, 3, 20, CLR_CYAN);
+    gfx.fillRect(centerX + 31, baseY + 2, 3, 20, CLR_CYAN);
   }
 
   if (isSnow) {
-    gfx.drawLine(centerX - 12, baseY + 6, centerX - 4, baseY + 14, ILI9341_WHITE);
-    gfx.drawLine(centerX - 12, baseY + 14, centerX - 4, baseY + 6, ILI9341_WHITE);
-    gfx.drawLine(centerX + 4, baseY + 6, centerX + 12, baseY + 14, ILI9341_WHITE);
-    gfx.drawLine(centerX + 4, baseY + 14, centerX + 12, baseY + 6, ILI9341_WHITE);
+    gfx.drawLine(centerX - 12, baseY + 6, centerX - 4, baseY + 14, CLR_WHITE);
+    gfx.drawLine(centerX - 12, baseY + 14, centerX - 4, baseY + 6, CLR_WHITE);
+    gfx.drawLine(centerX + 4, baseY + 6, centerX + 12, baseY + 14, CLR_WHITE);
+    gfx.drawLine(centerX + 4, baseY + 14, centerX + 12, baseY + 6, CLR_WHITE);
   }
 
   if (isThunder) {
-    gfx.drawLine(centerX - 6, baseY - 6, centerX + 2, baseY + 6, ILI9341_YELLOW);
-    gfx.drawLine(centerX + 2, baseY + 6, centerX - 6, baseY + 6, ILI9341_YELLOW);
-    gfx.drawLine(centerX - 6, baseY + 6, centerX + 6, baseY + 20, ILI9341_YELLOW);
+    gfx.drawLine(centerX - 6, baseY - 6, centerX + 2, baseY + 6, CLR_YELLOW);
+    gfx.drawLine(centerX + 2, baseY + 6, centerX - 6, baseY + 6, CLR_YELLOW);
+    gfx.drawLine(centerX - 6, baseY + 6, centerX + 6, baseY + 20, CLR_YELLOW);
   }
 }
 
 /** @brief Draw a smaller weather icon (~60% scale) for the today screen. */
 void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   int baseY = topY + 16;
-  gfx.fillRect(centerX - 30, topY, 60, 40, ILI9341_BLACK);
+  gfx.fillRect(centerX - 30, topY, 60, 40, CLR_BLACK);
 
   bool isThunder = (icon == ICON_STORM);
   bool isSnow    = (icon == ICON_SNOW);
@@ -168,7 +168,7 @@ void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon
     int sunX = isPartly ? (centerX - 12) : centerX;
     int sunY = isPartly ? (baseY - 6) : (baseY - 4);
     int sunR = isPartly ? 8 : 10;
-    gfx.fillCircle(sunX, sunY, sunR, ILI9341_YELLOW);
+    gfx.fillCircle(sunX, sunY, sunR, CLR_YELLOW);
     constexpr float RAY_STEP = PI / 4.0f;
     for (int i = 0; i < 8; i++) {
       float angle = i * RAY_STEP;
@@ -176,38 +176,38 @@ void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon
       int y1 = sunY + sin(angle) * (sunR + 3);
       int x2 = sunX + cos(angle) * (sunR + 7);
       int y2 = sunY + sin(angle) * (sunR + 7);
-      gfx.drawLine(x1, y1, x2, y2, ILI9341_YELLOW);
+      gfx.drawLine(x1, y1, x2, y2, CLR_YELLOW);
     }
     if (isClear) return;
   }
 
   if (isCloudy || isRain || isSnow || isThunder) {
-    gfx.fillRoundRect(centerX - 19, baseY - 10, 38, 16, 5, ILI9341_LIGHTGREY);
-    gfx.fillCircle(centerX - 9, baseY - 10, 7, ILI9341_LIGHTGREY);
-    gfx.fillCircle(centerX + 6, baseY - 10, 8, ILI9341_LIGHTGREY);
+    gfx.fillRoundRect(centerX - 19, baseY - 10, 38, 16, 5, CLR_LIGHTGREY);
+    gfx.fillCircle(centerX - 9, baseY - 10, 7, CLR_LIGHTGREY);
+    gfx.fillCircle(centerX + 6, baseY - 10, 8, CLR_LIGHTGREY);
   }
 
   if (isRain) {
-    gfx.fillRect(centerX - 11, baseY + 3, 2, 11, ILI9341_CYAN);
-    gfx.fillRect(centerX - 1, baseY + 4, 2, 11, ILI9341_CYAN);
-    gfx.fillRect(centerX + 9, baseY + 3, 2, 11, ILI9341_CYAN);
+    gfx.fillRect(centerX - 11, baseY + 3, 2, 11, CLR_CYAN);
+    gfx.fillRect(centerX - 1, baseY + 4, 2, 11, CLR_CYAN);
+    gfx.fillRect(centerX + 9, baseY + 3, 2, 11, CLR_CYAN);
   }
   if (icon == ICON_HEAVY_RAIN) {
-    gfx.fillRect(centerX - 21, baseY + 2, 2, 12, ILI9341_CYAN);
-    gfx.fillRect(centerX + 19, baseY + 2, 2, 12, ILI9341_CYAN);
+    gfx.fillRect(centerX - 21, baseY + 2, 2, 12, CLR_CYAN);
+    gfx.fillRect(centerX + 19, baseY + 2, 2, 12, CLR_CYAN);
   }
 
   if (isSnow) {
-    gfx.drawLine(centerX - 8, baseY + 4, centerX - 3, baseY + 9, ILI9341_WHITE);
-    gfx.drawLine(centerX - 8, baseY + 9, centerX - 3, baseY + 4, ILI9341_WHITE);
-    gfx.drawLine(centerX + 3, baseY + 4, centerX + 8, baseY + 9, ILI9341_WHITE);
-    gfx.drawLine(centerX + 3, baseY + 9, centerX + 8, baseY + 4, ILI9341_WHITE);
+    gfx.drawLine(centerX - 8, baseY + 4, centerX - 3, baseY + 9, CLR_WHITE);
+    gfx.drawLine(centerX - 8, baseY + 9, centerX - 3, baseY + 4, CLR_WHITE);
+    gfx.drawLine(centerX + 3, baseY + 4, centerX + 8, baseY + 9, CLR_WHITE);
+    gfx.drawLine(centerX + 3, baseY + 9, centerX + 8, baseY + 4, CLR_WHITE);
   }
 
   if (isThunder) {
-    gfx.drawLine(centerX - 4, baseY - 4, centerX + 1, baseY + 4, ILI9341_YELLOW);
-    gfx.drawLine(centerX + 1, baseY + 4, centerX - 4, baseY + 4, ILI9341_YELLOW);
-    gfx.drawLine(centerX - 4, baseY + 4, centerX + 4, baseY + 13, ILI9341_YELLOW);
+    gfx.drawLine(centerX - 4, baseY - 4, centerX + 1, baseY + 4, CLR_YELLOW);
+    gfx.drawLine(centerX + 1, baseY + 4, centerX - 4, baseY + 4, CLR_YELLOW);
+    gfx.drawLine(centerX - 4, baseY + 4, centerX + 4, baseY + 13, CLR_YELLOW);
   }
 }
 
@@ -224,7 +224,7 @@ void drawWindLabel(Adafruit_GFX& gfx, int colLeft, int colRight, int y, const ch
     w = classicTextWidthPx(text, size);
   }
   int drawX = colRight - (int)w;
-  gfx.setTextColor(ILI9341_WHITE);
+  gfx.setTextColor(CLR_WHITE);
   gfx.setCursor(drawX, y);
   gfx.print(text);
 }

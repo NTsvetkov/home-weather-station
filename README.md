@@ -19,7 +19,7 @@ A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/o
 | Component | Description |
 |-----------|-------------|
 | NodeMCU v3 | ESP8266 development board |
-| ILI9341 | 2.4" TFT LCD display (240x320, SPI) |
+| ILI9341 or ST7789 | 2.4" TFT LCD display (240x320, SPI) |
 | AHT20 | Temperature & humidity sensor (I2C) |
 
 ### Wiring Diagram
@@ -37,7 +37,7 @@ A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/o
 
 #### Pin Connections
 
-**TFT Display (ILI9341) → NodeMCU:**
+**TFT Display (ILI9341 / ST7789) → NodeMCU:**
 
 | Display Pin | NodeMCU Pin | GPIO |
 |-------------|-------------|------|
@@ -85,9 +85,13 @@ A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/o
    #define WIFI_PASS "your-wifi-password"
    ```
 
-4. **Build and upload:**
+4. **Build and upload** (default: ST7789):
    ```bash
    pio run -t upload
+   ```
+   For ILI9341, build the corresponding environment:
+   ```bash
+   pio run -e nodemcuv2_ili9341 -t upload
    ```
 
 5. **Monitor serial output (optional):**
@@ -110,6 +114,47 @@ All settings are in `src/config.h`. Key options:
 | `CFG_TODAY_SCREEN_DURATION_MS` | 10000 | Today's forecast screen display time (ms) |
 | `CFG_GAUGE_FETCH_INTERVAL_MS` | 180000 | Outdoor data refresh (3 min) |
 | `CFG_FORECAST_FETCH_INTERVAL_MS` | 3600000 | Forecast refresh (1 hour) |
+
+### Display Driver
+
+The project supports both **ILI9341** and **ST7789** TFT displays. Two PlatformIO environments are defined in `platformio.ini`:
+
+| Environment | Display | Build flag |
+|-------------|---------|------------|
+| `nodemcuv2_st7789` (default) | ST7789 | `-DDISPLAY_ST7789` |
+| `nodemcuv2_ili9341` | ILI9341 | `-DDISPLAY_ILI9341` |
+
+To switch displays, change `default_envs` in `platformio.ini`:
+```ini
+[platformio]
+default_envs = nodemcuv2_ili9341
+```
+Or build a specific environment directly:
+```bash
+pio run -e nodemcuv2_ili9341
+```
+
+The abstraction lives in `src/display_config.h` which conditionally includes the correct driver library, defines a `TftDriver` typedef, and provides unified `CLR_*` color constants.
+
+#### Hardware versions
+
+| | v1.2 (ILI9341) | v1.3 (ST7789) |
+|-|----------------|---------------|
+| Size | 2.8" | 2.4" |
+| Resolution | 240×320 | 240×320 |
+| SD card slot | Yes | No |
+| Wiring | identical | identical |
+| PlatformIO env | `nodemcuv2_ili9341` | `nodemcuv2_st7789` |
+
+| v1.2 — ILI9341 | v1.3 — ST7789 |
+|----------------|---------------|
+| ![v1.2](docs/v1.2.jpg) | ![v1.3](docs/v1.3.jpg) |
+
+Both boards use the same SPI wiring — no rewiring needed when switching between them.
+
+### Cyrillic Font Patch
+
+The standard Adafruit GFX font (`glcdfont.c`) does not contain Cyrillic characters. A PlatformIO pre-build script (`scripts/patch_font.py`) automatically patches the font with Cyrillic glyphs (Windows-1251 layout: A-я, Ё, ё) before each compilation. No manual steps are needed — the patch runs transparently and skips if already applied.
 
 ### Data Sources
 
@@ -139,25 +184,27 @@ Icons are generated based on multiple parameters (not just WMO weather codes):
 
 ```
 ├── src/
-│   ├── main.cpp          # Main application logic
-│   ├── config.h          # Your configuration (gitignored)
-│   ├── config.example.h  # Configuration template
-│   ├── display.cpp/h     # TFT rendering functions
-│   ├── data.cpp/h        # Data structures and fetching
-│   ├── sensors.cpp/h     # AHT20 sensor handling
-│   └── utils.cpp/h       # Helper functions
-├── lib/
-│   └── TFT_eSPI/         # Display library config
-├── docs/                 # Documentation & images
-└── platformio.ini        # PlatformIO configuration
+│   ├── main.cpp            # Main application logic
+│   ├── config.h            # Your configuration (gitignored)
+│   ├── config.example.h    # Configuration template
+│   ├── display_config.h    # Display driver abstraction (ILI9341/ST7789)
+│   ├── display.cpp/h       # TFT rendering functions
+│   ├── data.cpp/h          # Data structures and fetching
+│   ├── sensors.cpp/h       # AHT20 sensor handling
+│   └── utils.cpp/h         # Helper functions
+├── scripts/
+│   └── patch_font.py       # Pre-build Cyrillic font patcher
+├── docs/                   # Documentation & images
+└── platformio.ini          # PlatformIO configuration
 ```
 
 ## Dependencies
 
 Managed automatically by PlatformIO:
 
-- [Adafruit ILI9341](https://github.com/adafruit/Adafruit_ILI9341)
 - [Adafruit GFX Library](https://github.com/adafruit/Adafruit-GFX-Library)
+- [Adafruit ST7735 and ST7789](https://github.com/adafruit/Adafruit-ST7735-Library) (ST7789 environment)
+- [Adafruit ILI9341](https://github.com/adafruit/Adafruit_ILI9341) (ILI9341 environment)
 - [Adafruit AHTX0](https://github.com/adafruit/Adafruit_AHTX0)
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson)
 
