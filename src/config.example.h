@@ -32,6 +32,15 @@
 
 // WiFi
 #define CFG_WIFI_RECONNECT_INTERVAL_MS     15000UL
+// After this long without WiFi the status bar shows "НЯМА WIFI" instead of "СВЪРЗВАНЕ".
+#define CFG_WIFI_DOWN_ALERT_MS             60000UL
+
+// Status bar: age of the last update (seconds) at which its time turns amber / red.
+// Past the "old" limit on the main screen the outdoor values are greyed out.
+#define CFG_GAUGE_STALE_WARN_S             600UL
+#define CFG_GAUGE_STALE_OLD_S              1800UL
+#define CFG_FORECAST_STALE_WARN_S          5400UL
+#define CFG_FORECAST_STALE_OLD_S           10800UL
 
 // Timekeeping
 // How often to resync the millis-based clock from NTP time.
