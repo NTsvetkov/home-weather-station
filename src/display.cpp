@@ -12,11 +12,10 @@
  * Layout (320x240, classic 5x7 font, cell = 6*size x 8*size px):
  *   y 0..21   status bar: WiFi bars | screen name | last update time
  *   y 22      divider
- *   main:     big temps (size 6) at y=34, pictogram + humidity at y=94,
- *             divider y=128, pressure y=140, scale y=177, scale labels y=190
+ *   main:     big temps (size 6) at y=34, pictogram + humidity (size 4) at y=90,
+ *             divider y=130, pressure y=142, scale y=193, scale labels y=206
  *   forecast: header y=32, icon 56.., max y=118 (size 3), min y=146,
- *             divider y=170, rain y=180, wind y=202
- *   page dots at y=227
+ *             divider y=170, rain y=184, wind y=210
  */
 
 // ---- Freshness thresholds for the "last update" time (seconds) ----
@@ -212,18 +211,6 @@ static void drawRefreshIcon(int cx, int cy, uint16_t color) {
   tft.fillTriangle(cx, cy - 8, cx + 4, cy - 5, cx, cy - 2, color);  // arrow head
 }
 
-/** @brief Three dots showing which screen is active (0 = now, 1 = 3 days, 2 = today). */
-static void drawPageDots(uint8_t active) {
-  for (uint8_t i = 0; i < 3; i++) {
-    const int cx = 150 + i * 10;
-    if (i == active) {
-      tft.fillCircle(cx, 227, 3, CLR_WHITE);
-    } else {
-      tft.fillCircle(cx, 227, 2, CLR_TRACK);
-    }
-  }
-}
-
 /** @brief Format "ПРЕДИ 45МИН" / "ПРЕДИ 2Ч" / "ПРЕДИ 3Д". */
 static void formatAgo(char* out, size_t outLen, uint32_t ageS) {
   const uint32_t mins = ageS / 60UL;
@@ -315,38 +302,38 @@ static void drawPressureBlock(float pressure, int8_t trend, bool stale, uint32_t
   const int frac  = (p10 < 0) ? -(p10 % 10) : (p10 % 10);
   char pStr[16];
   snprintf(pStr, sizeof(pStr), "%d.%d", whole, frac);
-  drawText(16, 140, 3, valClr, pStr);
-  drawText(16 + textW(pStr, 3) + 6, 147, 2, softClr, "hPa");
+  drawText(16, 142, 3, valClr, pStr);
+  drawText(16 + textW(pStr, 3) + 6, 149, 2, softClr, "hPa");
 
   // Right side: trend word (or how old the data is)
   if (stale) {
     char ago[32];
     formatAgo(ago, sizeof(ago), ageS);
-    drawRightAlignedText(tft, ago, 304, 145, 2, CLR_HOT);
+    drawRightAlignedText(tft, ago, 304, 147, 2, CLR_HOT);
   } else {
     const char* word = labelSteady;
     uint16_t wordClr = CLR_CLOUD;
     if (trend > 0) { word = labelRising;  wordClr = CLR_WARM; }
     if (trend < 0) { word = labelFalling; wordClr = CLR_SKY; }
     const int wordX = 304 - textW(word, 2);
-    drawText(wordX, 145, 2, wordClr, word);
-    drawTrendTri(wordX - 14, 147, 10, 12, trend);
+    drawText(wordX, 147, 2, wordClr, word);
+    drawTrendTri(wordX - 14, 149, 10, 12, trend);
   }
 
   // Scale 970..1050 hPa over x 16..304
   const int x0 = 16;
   const int w  = 288;
-  tft.fillRoundRect(x0, 177, w, 4, 2, CLR_TRACK);
+  tft.fillRoundRect(x0, 193, w, 4, 2, CLR_TRACK);
   const int normX = x0 + (int)((1013.0f - 970.0f) * w / 80.0f);
-  tft.drawFastVLine(normX, 173, 12, softClr);
+  tft.drawFastVLine(normX, 189, 12, softClr);
 
   int px = x0 + (int)((pressure - 970.0f) * w / 80.0f);
   px = constrain(px, x0, x0 + w);
-  tft.fillTriangle(px - 6, 166, px + 6, 166, px, 175, valClr);
+  tft.fillTriangle(px - 7, 181, px + 7, 181, px, 191, valClr);
 
-  drawText(x0, 190, 2, softClr, "970");
-  drawCenteredText(tft, "1013", normX, 190, 2, softClr);
-  drawRightAlignedText(tft, "1050", x0 + w, 190, 2, softClr);
+  drawText(x0, 206, 2, softClr, "970");
+  drawCenteredText(tft, "1013", normX, 206, 2, softClr);
+  drawRightAlignedText(tft, "1050", x0 + w, 206, 2, softClr);
 }
 
 /** @brief Render the main readings screen. */
@@ -354,13 +341,13 @@ void drawMainScreen(const UiStatus& st) {
   tft.fillScreen(CLR_BLACK);
   drawStatusBar(st, labelNow, CFG_GAUGE_STALE_WARN_S, CFG_GAUGE_STALE_OLD_S);
 
-  tft.drawFastVLine(160, 23, 105, CLR_DIVIDER);
-  tft.drawFastHLine(0, 128, tft.width(), CLR_DIVIDER);
+  tft.drawFastVLine(160, 23, 107, CLR_DIVIDER);
+  tft.drawFastHLine(0, 130, tft.width(), CLR_DIVIDER);
 
   const bool extStale = haveExtData && freshnessLevel(st, CFG_GAUGE_STALE_WARN_S, CFG_GAUGE_STALE_OLD_S) == 2;
 
   // ---- Outside (left column) ----
-  drawTreeIcon(12, 95, CLR_CLOUD);
+  drawTreeIcon(4, 93, CLR_CLOUD);
   if (haveExtData) {
     char tStr[16];
     formatBigTempNoUnit(tStr, sizeof(tStr), extTemperature);
@@ -369,17 +356,17 @@ void drawMainScreen(const UiStatus& st) {
 
     char hStr[10];
     formatPercent0(hStr, sizeof(hStr), extHumidity);
-    const int hx = 136 - textW(hStr, 3);
-    drawDrop(hx - 11, 97, 5, extStale ? CLR_SKY_DIM : CLR_SKY);
-    drawText(hx, 94, 3, extStale ? CLR_DIM : CLR_WHITE, hStr);
-    if (!extStale) drawTrendTri(142, 100, 8, 10, extHumTrend);
+    const int hx = 140 - textW(hStr, 4);
+    drawDrop(hx - 10, 94, 6, extStale ? CLR_SKY_DIM : CLR_SKY);
+    drawText(hx, 90, 4, extStale ? CLR_DIM : CLR_WHITE, hStr);
+    if (!extStale) drawTrendTri(143, 100, 8, 10, extHumTrend);
   } else {
     drawCenteredText(tft, labelNoData1, 80, 36, 3, CLR_WARM);
     drawCenteredText(tft, labelNoData2, 80, 64, 3, CLR_WARM);
   }
 
   // ---- Inside (right column) ----
-  drawHouseIcon(171, 95, CLR_CLOUD);
+  drawHouseIcon(164, 94, CLR_CLOUD);
   if (haveIntData) {
     char tStr[16];
     formatTemp1NoUnit(tStr, sizeof(tStr), intTemperature);
@@ -387,9 +374,9 @@ void drawMainScreen(const UiStatus& st) {
 
     char hStr[10];
     formatPercent0(hStr, sizeof(hStr), intHumidity);
-    const int hx = 306 - textW(hStr, 3);
-    drawDrop(hx - 11, 97, 5, CLR_SKY);
-    drawText(hx, 94, 3, CLR_WHITE, hStr);
+    const int hx = 310 - textW(hStr, 4);
+    drawDrop(hx - 10, 94, 6, CLR_SKY);
+    drawText(hx, 90, 4, CLR_WHITE, hStr);
   } else {
     drawCenteredText(tft, labelNoData1, 240, 36, 3, CLR_WARM);
     drawCenteredText(tft, labelNoData2, 240, 64, 3, CLR_WARM);
@@ -398,7 +385,6 @@ void drawMainScreen(const UiStatus& st) {
   // ---- Pressure ----
   if (haveExtData) drawPressureBlock(extPressure, extPressTrend, extStale, st.updAgeS);
 
-  drawPageDots(0);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -436,14 +422,13 @@ void drawForecastScreen(const UiStatus& st) {
 
   if (forecastCount == 0) {
     drawCenteredText(tft, labelNoForecast, tft.width() / 2, 112, 2, CLR_WARM);
-    drawPageDots(1);
     return;
   }
 
   const int colW = tft.width() / 3;  // 106
 
   for (int i = 1; i < 3; i++) {
-    tft.drawFastVLine(i * colW, 23, 193, CLR_DIVIDER);
+    tft.drawFastVLine(i * colW, 23, 217, CLR_DIVIDER);
   }
   tft.drawFastHLine(0, 170, tft.width(), CLR_DIVIDER);
 
@@ -466,8 +451,8 @@ void drawForecastScreen(const UiStatus& st) {
     const int rain = (int)(d.precip + 0.5f);
     char rainStr[16];
     snprintf(rainStr, sizeof(rainStr), "%d%s", rain, unitLiters);
-    drawDrop(x0 + 20, 181, 4, CLR_SKY);
-    drawText(x0 + 30, 180, 2, rain > 0 ? CLR_SKY : CLR_WHITE, rainStr);
+    drawDrop(x0 + 20, 185, 4, CLR_SKY);
+    drawText(x0 + 30, 184, 2, rain > 0 ? CLR_SKY : CLR_WHITE, rainStr);
 
     // Wind
     const int wind = (int)(d.windMax + 0.5f);
@@ -477,11 +462,10 @@ void drawForecastScreen(const UiStatus& st) {
     } else {
       snprintf(windStr, sizeof(windStr), "%d", wind);
     }
-    drawWindIcon(x0 + 14, 205, CLR_MUTED);
-    drawText(x0 + 30, 202, 2, CLR_WHITE, windStr);
+    drawWindIcon(x0 + 14, 213, CLR_MUTED);
+    drawText(x0 + 30, 210, 2, CLR_WHITE, windStr);
   }
 
-  drawPageDots(1);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -498,7 +482,6 @@ void drawTodayScreen(const UiStatus& st) {
 
   if (!haveTodayForecast) {
     drawCenteredText(tft, labelNoHourly, tft.width() / 2, 112, 2, CLR_WARM);
-    drawPageDots(2);
     return;
   }
 
@@ -507,12 +490,12 @@ void drawTodayScreen(const UiStatus& st) {
 
   // Highlight the current block (before grid lines so they stay on top)
   if (current >= 0) {
-    tft.fillRect(current * colW + 1, 23, colW - 1, 193, CLR_STATUS_BG);
+    tft.fillRect(current * colW + 1, 23, colW - 1, 217, CLR_STATUS_BG);
     tft.fillRect(current * colW + 10, 50, 60, 2, CLR_SKY);
   }
 
   for (int i = 1; i < 4; i++) {
-    tft.drawFastVLine(i * colW, 23, 193, CLR_DIVIDER);
+    tft.drawFastVLine(i * colW, 23, 217, CLR_DIVIDER);
   }
   tft.drawFastHLine(0, 170, tft.width(), CLR_DIVIDER);
 
@@ -542,17 +525,16 @@ void drawTodayScreen(const UiStatus& st) {
     const int rain = (int)(fb.precip + 0.5f);
     char rainStr[16];
     snprintf(rainStr, sizeof(rainStr), "%d%s", rain, unitLiters);
-    drawDrop(x0 + 14, 181, 4, isPast ? CLR_SKY_DIM : CLR_SKY);
-    drawText(x0 + 22, 180, 2, isPast ? CLR_DIM : (rain > 0 ? CLR_SKY : CLR_WHITE), rainStr);
+    drawDrop(x0 + 14, 185, 4, isPast ? CLR_SKY_DIM : CLR_SKY);
+    drawText(x0 + 22, 184, 2, isPast ? CLR_DIM : (rain > 0 ? CLR_SKY : CLR_WHITE), rainStr);
 
     // Wind (number only: "КМ/Ч" does not fit an 80 px column at size 2)
     char windStr[8];
     snprintf(windStr, sizeof(windStr), "%d", (int)(fb.windMax + 0.5f));
-    drawWindIcon(x0 + 8, 205, isPast ? CLR_DIM : CLR_MUTED);
-    drawText(x0 + 22, 202, 2, isPast ? CLR_DIM : CLR_WHITE, windStr);
+    drawWindIcon(x0 + 8, 213, isPast ? CLR_DIM : CLR_MUTED);
+    drawText(x0 + 22, 210, 2, isPast ? CLR_DIM : CLR_WHITE, windStr);
   }
 
-  drawPageDots(2);
 }
 
 /* -------------------------------------------------------------------------- */
