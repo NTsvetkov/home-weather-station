@@ -26,10 +26,12 @@
 
 // UI palette (v2 design)
 #define CLR_STATUS_BG  0x08C4  // #081820 status bar / highlighted column
-#define CLR_DIVIDER    0x2189  // #20304A grid lines
-#define CLR_TRACK      0x29CA  // #293852 pressure track, inactive dots/bars
+#define CLR_DIVIDER    0x3A8E  // #3A5070 grid lines
+#define CLR_TRACK      0x42CF  // #425878 pressure track, inactive WiFi bars
 #define CLR_DIM        0x532F  // #56657D stale / past values
-#define CLR_MUTED      0x8495  // #8391AC labels, units
+#define CLR_MUTED      0x9D58  // #9AA8C2 labels, units
+#define CLR_DIV_STRONG 0x6C14  // #6A82A6 outside/inside divider on the main screen
+#define CLR_PRESS      0xFEAD  // #FFD56A pressure value and scale fill
 #define CLR_CLOUD      0xC67B  // #C5CEDE secondary text, pictograms, clouds
 #define CLR_SKY        0x5E5F  // #5ACAFF humidity drop, rain, headers, < 10C
 #define CLR_COOL       0x4C7F  // #4A8DFF 10..18C

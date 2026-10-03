@@ -156,14 +156,31 @@ static uint8_t freshnessLevel(const UiStatus& st, uint32_t warnS, uint32_t oldS)
   return 0;
 }
 
-/** @brief Small trend triangle: up (amber), down (sky), steady (muted, pointing right). */
-static void drawTrendTri(int x, int y, int w, int h, int8_t trend) {
+/** @brief Trend color: rising amber, falling sky, steady light grey. */
+static uint16_t trendColor(int8_t trend) {
+  if (trend > 0) return CLR_WARM;
+  if (trend < 0) return CLR_SKY;
+  return CLR_CLOUD;
+}
+
+/**
+ * @brief Trend arrow (head + stem) in an s x s box: up, down, or right for steady.
+ * @param s Box size in px (even number, >= 10).
+ */
+static void drawTrendArrow(int x, int y, int s, int8_t trend) {
+  const uint16_t c = trendColor(trend);
+  const int h  = s / 2;        // head depth
+  const int st = s / 3;        // stem thickness
+  const int so = (s - st) / 2; // stem offset
   if (trend > 0) {
-    tft.fillTriangle(x, y + h, x + w / 2, y, x + w, y + h, CLR_WARM);
+    tft.fillTriangle(x, y + h, x + h, y, x + s, y + h, c);
+    tft.fillRect(x + so, y + h, st, s - h, c);
   } else if (trend < 0) {
-    tft.fillTriangle(x, y, x + w, y, x + w / 2, y + h, CLR_SKY);
+    tft.fillTriangle(x, y + s - h, x + h, y + s, x + s, y + s - h, c);
+    tft.fillRect(x + so, y, st, s - h, c);
   } else {
-    tft.fillTriangle(x, y, x + w, y + h / 2, x, y + h, CLR_MUTED);
+    tft.fillTriangle(x + s - h, y, x + s, y + h, x + s - h, y + s, c);
+    tft.fillRect(x, y + so, s - h, st, c);
   }
 }
 
@@ -293,8 +310,8 @@ static void drawStatusBar(const UiStatus& st, const char* title, uint32_t warnS,
 
 /** @brief Pressure block: value, trend word, 970..1050 scale with marker. */
 static void drawPressureBlock(float pressure, int8_t trend, bool stale, uint32_t ageS) {
-  const uint16_t valClr  = stale ? CLR_DIM : CLR_WHITE;
-  const uint16_t softClr = stale ? CLR_DIM : CLR_MUTED;
+  const uint16_t valClr  = stale ? CLR_DIM : CLR_PRESS;
+  const uint16_t softClr = stale ? CLR_DIM : CLR_CLOUD;
 
   // Value "1015.6" + "hPa"
   const int p10   = (int)roundf(pressure * 10.0f);
@@ -317,19 +334,19 @@ static void drawPressureBlock(float pressure, int8_t trend, bool stale, uint32_t
     if (trend < 0) { word = labelFalling; wordClr = CLR_SKY; }
     const int wordX = 304 - textW(word, 2);
     drawText(wordX, 147, 2, wordClr, word);
-    drawTrendTri(wordX - 14, 149, 10, 12, trend);
+    drawTrendArrow(wordX - 18, 147, 14, trend);
   }
 
   // Scale 970..1050 hPa over x 16..304
   const int x0 = 16;
   const int w  = 288;
-  tft.fillRoundRect(x0, 193, w, 4, 2, CLR_TRACK);
-  const int normX = x0 + (int)((1013.0f - 970.0f) * w / 80.0f);
-  tft.drawFastVLine(normX, 189, 12, softClr);
-
   int px = x0 + (int)((pressure - 970.0f) * w / 80.0f);
   px = constrain(px, x0, x0 + w);
-  tft.fillTriangle(px - 7, 181, px + 7, 181, px, 191, valClr);
+  tft.fillRoundRect(x0, 192, w, 6, 3, CLR_TRACK);
+  tft.fillRoundRect(x0, 192, px - x0 + 3, 6, 3, valClr);  // filled up to the current value
+  const int normX = x0 + (int)((1013.0f - 970.0f) * w / 80.0f);
+  tft.fillRect(normX, 188, 2, 14, softClr);
+  tft.fillTriangle(px - 8, 178, px + 8, 178, px, 189, stale ? CLR_DIM : CLR_WHITE);
 
   drawText(x0, 206, 2, softClr, "970");
   drawCenteredText(tft, "1013", normX, 206, 2, softClr);
@@ -341,8 +358,8 @@ void drawMainScreen(const UiStatus& st) {
   tft.fillScreen(CLR_BLACK);
   drawStatusBar(st, labelNow, CFG_GAUGE_STALE_WARN_S, CFG_GAUGE_STALE_OLD_S);
 
-  tft.drawFastVLine(160, 23, 107, CLR_DIVIDER);
-  tft.drawFastHLine(0, 130, tft.width(), CLR_DIVIDER);
+  tft.fillRect(159, 23, 2, 107, CLR_DIV_STRONG);
+  tft.fillRect(0, 130, tft.width(), 2, CLR_DIV_STRONG);
 
   const bool extStale = haveExtData && freshnessLevel(st, CFG_GAUGE_STALE_WARN_S, CFG_GAUGE_STALE_OLD_S) == 2;
 
@@ -351,15 +368,25 @@ void drawMainScreen(const UiStatus& st) {
   if (haveExtData) {
     char tStr[16];
     formatBigTempNoUnit(tStr, sizeof(tStr), extTemperature);
-    drawRightAlignedText(tft, tStr, 148, 34, 6, extStale ? CLR_DIM : colorForTemperature(extTemperature));
-    if (!extStale) drawTrendTri(150, 66, 8, 10, extTempTrend);
+    const int tx = 150 - textW(tStr, 6);
+    drawText(tx, 34, 6, extStale ? CLR_DIM : colorForTemperature(extTemperature), tStr);
+    if (!extStale) {
+      // The '.' glyph only uses the bottom rows of its 36 px cell, so the space above it
+      // holds a large trend arrow. Values without a dot ("-12") get the arrow on the left.
+      const char* dot = strchr(tStr, '.');
+      if (dot) {
+        drawTrendArrow(tx + (int)(dot - tStr) * 36 + 6, 38, 18, extTempTrend);
+      } else if (tx >= 24) {
+        drawTrendArrow(tx - 22, 50, 18, extTempTrend);
+      }
+    }
 
     char hStr[10];
     formatPercent0(hStr, sizeof(hStr), extHumidity);
     const int hx = 140 - textW(hStr, 4);
     drawDrop(hx - 10, 94, 6, extStale ? CLR_SKY_DIM : CLR_SKY);
     drawText(hx, 90, 4, extStale ? CLR_DIM : CLR_WHITE, hStr);
-    if (!extStale) drawTrendTri(143, 100, 8, 10, extHumTrend);
+    if (!extStale) drawTrendArrow(144, 97, 14, extHumTrend);
   } else {
     drawCenteredText(tft, labelNoData1, 80, 36, 3, CLR_WARM);
     drawCenteredText(tft, labelNoData2, 80, 64, 3, CLR_WARM);
