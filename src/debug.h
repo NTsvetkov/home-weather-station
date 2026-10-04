@@ -15,6 +15,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "project_config.h"
 
 // Set default log level if not defined.
 // 0 = off, 1 = errors only, 2 = errors + warnings, 3 = all (info)

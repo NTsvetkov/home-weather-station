@@ -32,9 +32,9 @@ Six modules in `src/`:
 | `config.h` | User secrets + all tunable intervals (gitignored; template in `config.example.h`) |
 | `debug.h` | `LOG_I/LOG_W/LOG_E` macros storing format strings in PROGMEM; verbosity via `DEBUG_LEVEL` 0-3 |
 
-**Data flow:** AHT20 → `intTemperature/intHumidity` (every 2s) · meter.ac → `extTemperature/extHumidity/extPressure` + trends (every 3min) · Open-Meteo → `forecast[3]` (every 1hr, also on midnight rollover) · Display alternates main/forecast screens via `showMainScreen` flag; `needRedraw = true` triggers redraws.
+**Data flow:** AHT20 → `intTemperature/intHumidity` (every 2s) · meter.ac → `extTemperature/extHumidity/extPressure` + trends (every 3min) · Open-Meteo → `forecast[3]` (every 1hr, also on midnight rollover) · Display rotates main / daily / main / hourly screens via `screenCycleIndex`; `needRedraw = true` triggers redraws.
 
-**Non-blocking loop:** The main loop uses millis-based timers, never blocking calls. `delay(1)` + `yield()` keep the ESP8266 watchdog fed.
+**Scheduling:** Timers are millis-based, but HTTP and sensor reads are synchronous. At most one HTTP request runs per loop. Each endpoint has its own retry backoff and update time. `delay(1)` + `yield()` feed the watchdog. HTTPS waits for valid NTP time.
 
 ## Key Patterns
 
@@ -44,14 +44,15 @@ Six modules in `src/`:
 
 **Forecast icons:** `pickDayIcon()` uses priority-based selection: storms (WMO 95/96/99) → heavy precip → light precip → cloud cover thresholds → defaults. Snow vs rain determined by tMax ≤ 2°C.
 
-**Timekeeping:** `TimeKeeper` syncs from NTP, then tracks time via millis offset. Midnight detection triggers forecast refresh (`midnightForecastPending`).
+**Timekeeping:** `TimeKeeper` syncs from NTP, then tracks time via millis offset. Midnight detection refreshes the daily/hourly schedules independently and hides yesterday's hourly blocks.
 
 ## ESP8266 Constraints
 
 - ~80KB usable RAM. Use PROGMEM for strings, stack buffers (`char buf[N]`) instead of `String` in loops.
-- `WiFiClientSecureBearSSL` with `setInsecure()` (no CA store on device). TLS buffer sizes are tuned per endpoint.
+- BearSSL verifies HTTPS with ISRG Root X1/X2 from `tls_roots.h`. Never use `setInsecure()`. MFLN is probed before selecting a 2048-byte RX buffer; otherwise use 16384 bytes.
 - Must call `yield()` or `delay(1)` in any long-running loop to prevent watchdog resets.
-- ArduinoJson capacity for forecast parsing: 8000 bytes.
+- Default JSON capacities: daily 2048 bytes (four API days), hourly 4000 bytes. User configurations may override them. Body readers cap both size and elapsed time.
+- A pre-build AHTX0 patch bounds busy waits at one second and fails the build if the pinned upstream implementation changes.
 
 ## Adding Features
 
