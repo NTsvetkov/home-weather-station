@@ -66,14 +66,17 @@
 #define CFG_GAUGE_HTTP_TIMEOUT_MS          3500UL
 #define CFG_FORECAST_HTTP_TIMEOUT_MS       9000UL
 
-// TLS buffers (gauge response is ~200 bytes CSV; 512 is the BearSSL minimum)
-#define CFG_TLS_RX_BUFFER_BYTES_GAUGE      512
-#define CFG_TLS_TX_BUFFER_BYTES_GAUGE      512
-#define CFG_TLS_RX_BUFFER_BYTES_FORECAST   2048
-#define CFG_TLS_TX_BUFFER_BYTES_FORECAST   512
+// TLS RX is negotiated automatically: 2048 with MFLN, otherwise 16384.
+// Legacy CFG_TLS_*_BUFFER_BYTES settings are ignored to avoid unsafe small records.
+#define CFG_HTTP_TOTAL_TIMEOUT_MS          20000UL
+#define CFG_HTTP_MAX_HEADER_BYTES          4096
+#define CFG_GAUGE_MAX_RESPONSE_BYTES        512
+#define CFG_FORECAST_MAX_RESPONSE_BYTES     8192
+#define CFG_HOURLY_MAX_RESPONSE_BYTES       12288
+#define CFG_SENSOR_REINIT_INTERVAL_MS      30000UL
 
 // ArduinoJson document capacity
-#define CFG_FORECAST_JSON_DOC_CAPACITY     8000
+#define CFG_FORECAST_JSON_DOC_CAPACITY     2048
 
 // Today screen duration
 #define CFG_TODAY_SCREEN_DURATION_MS       10000UL
@@ -83,5 +86,5 @@
 
 // Endpoints
 #define CFG_GAUGE_URL    "https://meter.ac/gs/nodes/N200/gauge.txt"
-#define CFG_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,cloud_cover_mean&models=ecmwf_ifs&timezone=auto"
+#define CFG_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,cloud_cover_mean&forecast_days=4&models=ecmwf_ifs&timezone=auto"
 #define CFG_HOURLY_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&hourly=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,is_day&forecast_days=1&models=ecmwf_ifs&timezone=auto"
