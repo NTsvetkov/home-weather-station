@@ -7,8 +7,30 @@
 
 /**
  * @file display.cpp
- * @brief TFT UI rendering (main screen + forecast screen).
+ * @brief TFT UI rendering (status bar + main / 3-day / today screens).
+ *
+ * Layout (320x240, classic 5x7 font, cell = 6*size x 8*size px):
+ *   y 0..21   status bar: WiFi bars | screen name | last update time
+ *   y 22      divider
+ *   main:     big temps (size 6) at y=34, pictogram + humidity (size 4) at y=90,
+ *             divider y=130, pressure y=142, scale y=193, scale labels y=206
+ *   forecast: header y=32, icon 56.., max y=118 (size 3), min y=146,
+ *             divider y=170, rain y=184, wind y=210
  */
+
+// ---- Freshness thresholds for the "last update" time (seconds) ----
+#ifndef CFG_GAUGE_STALE_WARN_S
+#define CFG_GAUGE_STALE_WARN_S      600UL    // > 10 min: amber
+#endif
+#ifndef CFG_GAUGE_STALE_OLD_S
+#define CFG_GAUGE_STALE_OLD_S       1800UL   // > 30 min: red + outdoor values greyed out
+#endif
+#ifndef CFG_FORECAST_STALE_WARN_S
+#define CFG_FORECAST_STALE_WARN_S   5400UL   // > 1.5 h: amber
+#endif
+#ifndef CFG_FORECAST_STALE_OLD_S
+#define CFG_FORECAST_STALE_OLD_S    10800UL  // > 3 h: red
+#endif
 
 /**
  * @brief Choose a daily icon based on precipitation / temperature / cloud cover.
@@ -16,6 +38,7 @@
  * Wind is handled separately as a label in the UI.
  */
 static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudMean, int wmoCode) {
+  (void)tMin;
   // Thunderstorms: allow WMO to override
   if (wmoCode == 95 || wmoCode == 96 || wmoCode == 99) return ICON_STORM;
 
@@ -45,45 +68,46 @@ static DayIcon pickDayIcon(float tMax, float tMin, float precipSum, float cloudM
 static TftDriver tft(TFT_CS, TFT_DC, TFT_RST);
 
 // Pre-converted Cyrillic labels (initialized once in initDisplay()).
-static char labelOutside[16];
-static char labelInside[16];
+static char labelNow[16];
+static char labelDays[16];
+static char labelToday[16];
+static char labelNoWifi[24];
+static char labelConnecting[24];
 static char labelNoData1[16];
 static char labelNoData2[16];
-static char labelForecast[24];
 static char labelNoForecast[32];
-static char labelToday[16];
 static char labelNoHourly[32];
+static char labelRising[16];
+static char labelFalling[16];
+static char labelSteady[24];
+static char labelAgo[16];
+static char unitMin[8];
+static char unitHour[8];
+static char unitDay[8];
 static char unitLiters[8];
 static char unitKmh[12];
 
-/**
- * @brief Format temperature with unit as "-12.3 C".
- * @param[out] out    Output buffer.
- * @param[in]  outLen Buffer size.
- * @param[in]  tempC  Temperature in Celsius.
- */
-static void formatTempC1(char* out, size_t outLen, float tempC) {
-  // Format as "-12.3 C" without using String(float, 1) to avoid heap churn.
-  const int t10   = (int)roundf(tempC * 10.0f);
-  const int abs10 = (t10 < 0) ? -t10 : t10;
-  const int whole = abs10 / 10;
-  const int frac  = abs10 % 10;
+/* -------------------------------------------------------------------------- */
+/*                              Small helpers                                 */
+/* -------------------------------------------------------------------------- */
 
-  if (t10 < 0) {
-    snprintf(out, outLen, "-%d.%d C", whole, frac);
-  } else {
-    snprintf(out, outLen, "%d.%d C", whole, frac);
-  }
+/** @brief Text width in px for the classic 6x8 font. */
+static inline int textW(const char* s, uint8_t size) {
+  return (int)strlen(s) * 6 * size;
+}
+
+/** @brief Draw text with its top-left corner at (x, y). */
+static void drawText(int x, int y, uint8_t size, uint16_t color, const char* s) {
+  tft.setTextSize(size);
+  tft.setTextColor(color);
+  tft.setCursor(x, y);
+  tft.print(s);
 }
 
 /**
  * @brief Format temperature without unit as "-12.3".
- * @param[out] out    Output buffer.
- * @param[in]  outLen Buffer size.
- * @param[in]  tempC  Temperature in Celsius.
  */
 static void formatTemp1NoUnit(char* out, size_t outLen, float tempC) {
-  // Format as "-12.3" (1 decimal) without heap allocations.
   const int t10   = (int)roundf(tempC * 10.0f);
   const int abs10 = (t10 < 0) ? -t10 : t10;
   const int whole = abs10 / 10;
@@ -97,13 +121,10 @@ static void formatTemp1NoUnit(char* out, size_t outLen, float tempC) {
 }
 
 /**
- * @brief Format temperature for large display (integer if < -10C, else 1 decimal).
- * @param[out] out    Output buffer.
- * @param[in]  outLen Buffer size.
- * @param[in]  tempC  Temperature in Celsius.
+ * @brief Format temperature for the big display (integer if < -10C, else 1 decimal).
+ * Keeps the value within 4 characters so it fits a 160 px column at size 6.
  */
 static void formatBigTempNoUnit(char* out, size_t outLen, float tempC) {
-  // Match utils::formatBigTemp(): < -10C -> integer, otherwise 1 decimal.
   if (tempC < -10.0f) {
     snprintf(out, outLen, "%d", (int)roundf(tempC));
     return;
@@ -112,261 +133,440 @@ static void formatBigTempNoUnit(char* out, size_t outLen, float tempC) {
   formatTemp1NoUnit(out, outLen, tempC);
 }
 
-/**
- * @brief Format value as integer percentage "55 %".
- * @param[out] out    Output buffer.
- * @param[in]  outLen Buffer size.
- * @param[in]  value  Value to format.
- */
+/** @brief Format value as integer percentage "55%". */
 static void formatPercent0(char* out, size_t outLen, float value) {
-  // Format as "55 %" without String(value, 0) + " %".
-  const int v = (int)roundf(value);
-  snprintf(out, outLen, "%d %%", v);
+  snprintf(out, outLen, "%d%%", (int)roundf(value));
 }
 
 /** @brief Pick a UI color for a temperature value (C). */
-uint16_t colorForTemperature(float tempC) {
-  if (tempC < 10) return CLR_CYAN;
-  if (tempC < 18) return CLR_BLUE;
-  if (tempC <= 25) return CLR_GREEN;
-  if (tempC <= 30) return CLR_ORANGE;
+static uint16_t colorForTemperature(float tempC) {
+  if (tempC < 10) return CLR_SKY;
+  if (tempC < 18) return CLR_COOL;
+  if (tempC <= 25) return CLR_OK;
+  if (tempC <= 30) return CLR_WARM;
 
-  return CLR_RED;
+  return CLR_HOT;
 }
 
-/** @brief Pick a UI color for a humidity value (%). */
-uint16_t colorForHumidity(float humidity) {
-  if (humidity < 30) return CLR_CYAN;
-  if (humidity < 40) return CLR_BLUE;
-  if (humidity <= 60) return CLR_GREEN;
-  if (humidity <= 70) return CLR_ORANGE;
-
-  return CLR_RED;
+/** @brief 0 = fresh, 1 = getting old, 2 = old. */
+static uint8_t freshnessLevel(const UiStatus& st, uint32_t warnS, uint32_t oldS) {
+  if (!st.haveUpdate) return 0;
+  if (st.updAgeS > oldS) return 2;
+  if (st.updAgeS > warnS) return 1;
+  return 0;
 }
+
+/** @brief Trend color: rising amber, falling sky, steady light grey. */
+static uint16_t trendColor(int8_t trend) {
+  if (trend > 0) return CLR_WARM;
+  if (trend < 0) return CLR_SKY;
+  return CLR_CLOUD;
+}
+
+/**
+ * @brief Trend arrow (head + stem) in an s x s box: up, down, or right for steady.
+ * @param s Box size in px (even number, >= 10).
+ */
+static void drawTrendArrow(int x, int y, int s, int8_t trend) {
+  const uint16_t c = trendColor(trend);
+  const int h  = s / 2;        // head depth
+  const int st = s / 3;        // stem thickness
+  const int so = (s - st) / 2; // stem offset
+  if (trend > 0) {
+    tft.fillTriangle(x, y + h, x + h, y, x + s, y + h, c);
+    tft.fillRect(x + so, y + h, st, s - h, c);
+  } else if (trend < 0) {
+    tft.fillTriangle(x, y + s - h, x + h, y + s, x + s, y + s - h, c);
+    tft.fillRect(x + so, y, st, s - h, c);
+  } else {
+    tft.fillTriangle(x + s - h, y, x + s, y + h, x + s - h, y + s, c);
+    tft.fillRect(x, y + so, s - h, st, c);
+  }
+}
+
+/** @brief Degree ring (2 px thick). */
+static void drawDegree(int cx, int cy, int r, uint16_t color) {
+  tft.drawCircle(cx, cy, r, color);
+  tft.drawCircle(cx, cy, r - 1, color);
+}
+
+/** @brief Water drop: point at (cx, top), round bottom of radius r. Height ~ 3r. */
+static void drawDrop(int cx, int top, int r, uint16_t color) {
+  const int cy = top + 2 * r;
+  tft.fillTriangle(cx, top, cx - r, cy, cx + r, cy, color);
+  tft.fillCircle(cx, cy, r, color);
+}
+
+/** @brief Wind pictogram: three strokes, 12x10. */
+static void drawWindIcon(int x, int y, uint16_t color) {
+  tft.fillRect(x, y + 1, 8, 2, color);
+  tft.fillRect(x + 8, y, 2, 2, color);
+  tft.fillRect(x, y + 4, 11, 2, color);
+  tft.fillRect(x, y + 7, 6, 2, color);
+  tft.fillRect(x + 6, y + 8, 2, 2, color);
+}
+
+/** @brief "Outside" pictogram: fir tree, 20x22. */
+static void drawTreeIcon(int x, int y, uint16_t color) {
+  tft.fillTriangle(x + 10, y, x + 3, y + 9, x + 17, y + 9, color);
+  tft.fillTriangle(x + 10, y + 4, x, y + 17, x + 20, y + 17, color);
+  tft.fillRect(x + 8, y + 17, 4, 5, color);
+}
+
+/** @brief "Inside" pictogram: house, 22x21. */
+static void drawHouseIcon(int x, int y, uint16_t color) {
+  tft.fillTriangle(x + 11, y, x, y + 10, x + 22, y + 10, color);
+  tft.fillRect(x + 3, y + 10, 17, 11, color);
+  tft.fillRect(x + 9, y + 14, 4, 7, CLR_BLACK);
+}
+
+/** @brief Circular "refresh" arrow, ~12x12 around (cx, cy). Drawn on the status bar. */
+static void drawRefreshIcon(int cx, int cy, uint16_t color) {
+  tft.drawCircle(cx, cy, 5, color);
+  tft.drawCircle(cx, cy, 4, color);
+  tft.fillRect(cx + 1, cy - 6, 6, 5, CLR_STATUS_BG);          // open the top-right quarter
+  tft.fillTriangle(cx, cy - 8, cx + 4, cy - 5, cx, cy - 2, color);  // arrow head
+}
+
+/** @brief Format "ПРЕДИ 45МИН" / "ПРЕДИ 2Ч" / "ПРЕДИ 3Д". */
+static void formatAgo(char* out, size_t outLen, uint32_t ageS) {
+  const uint32_t mins = ageS / 60UL;
+  if (mins < 60UL) {
+    snprintf(out, outLen, "%s%lu%s", labelAgo, (unsigned long)mins, unitMin);
+  } else if (mins < 48UL * 60UL) {
+    snprintf(out, outLen, "%s%lu%s", labelAgo, (unsigned long)(mins / 60UL), unitHour);
+  } else {
+    snprintf(out, outLen, "%s%lu%s", labelAgo, (unsigned long)(mins / 1440UL), unitDay);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Status bar                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * @brief Draw the top status bar (y 0..22).
+ * @param title  Screen name shown in the middle (already converted with utf8rus).
+ * @param warnS  Age (s) after which the update time turns amber.
+ * @param oldS   Age (s) after which the update time turns red.
+ */
+static void drawStatusBar(const UiStatus& st, const char* title, uint32_t warnS, uint32_t oldS) {
+  tft.fillRect(0, 0, tft.width(), 22, CLR_STATUS_BG);
+  tft.drawFastHLine(0, 22, tft.width(), CLR_DIVIDER);
+
+  // WiFi bars (x 8..23)
+  uint8_t bars     = 0;
+  uint16_t barClr  = CLR_OK;
+  if (st.wifi == WIFI_UI_OK) {
+    if (st.rssi >= -60) bars = 4;
+    else if (st.rssi >= -67) bars = 3;
+    else if (st.rssi >= -75) bars = 2;
+    else bars = 1;
+    if (bars <= 2) barClr = CLR_WARM;
+  }
+  static const uint8_t barH[4] = {4, 7, 10, 13};
+  for (uint8_t i = 0; i < 4; i++) {
+    tft.fillRect(8 + i * 4, 16 - barH[i], 3, barH[i], (i < bars) ? barClr : CLR_TRACK);
+  }
+  if (st.wifi == WIFI_UI_DOWN) {
+    tft.drawLine(9, 4, 22, 15, CLR_HOT);
+    tft.drawLine(10, 4, 23, 15, CLR_HOT);
+    tft.drawLine(22, 4, 9, 15, CLR_HOT);
+    tft.drawLine(23, 4, 10, 15, CLR_HOT);
+  }
+
+  // Middle: screen name, or the WiFi problem
+  if (st.wifi == WIFI_UI_DOWN) {
+    drawCenteredText(tft, labelNoWifi, tft.width() / 2, 4, 2, CLR_HOT);
+  } else if (st.wifi == WIFI_UI_CONNECTING) {
+    drawCenteredText(tft, labelConnecting, tft.width() / 2, 4, 2, CLR_WARM);
+  } else {
+    drawCenteredText(tft, title, tft.width() / 2, 4, 2, CLR_MUTED);
+  }
+
+  // Right: time of the last successful update, colored by age
+  uint16_t clr = CLR_CLOUD;
+  if (!st.haveUpdate) {
+    clr = CLR_DIM;
+  } else {
+    const uint8_t f = freshnessLevel(st, warnS, oldS);
+    if (f == 1) clr = CLR_WARM;
+    else if (f == 2) clr = CLR_HOT;
+  }
+  drawRefreshIcon(240, 11, clr);
+
+  char buf[8];
+  if (st.haveUpdate && st.updTimeValid) {
+    snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)st.updHour, (unsigned)st.updMin);
+  } else {
+    strcpy(buf, "--:--");
+  }
+  drawText(252, 4, 2, clr, buf);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Main screen                                  */
+/* -------------------------------------------------------------------------- */
+
+/** @brief Pressure block: value, trend word, 970..1050 scale with marker. */
+static void drawPressureBlock(float pressure, int8_t trend, bool stale, uint32_t ageS) {
+  const uint16_t valClr  = stale ? CLR_DIM : CLR_PRESS;
+  const uint16_t softClr = stale ? CLR_DIM : CLR_CLOUD;
+
+  // Value "1015.6" + "hPa"
+  const int p10   = (int)roundf(pressure * 10.0f);
+  const int whole = p10 / 10;
+  const int frac  = (p10 < 0) ? -(p10 % 10) : (p10 % 10);
+  char pStr[16];
+  snprintf(pStr, sizeof(pStr), "%d.%d", whole, frac);
+  drawText(16, 142, 3, valClr, pStr);
+  drawText(16 + textW(pStr, 3) + 6, 149, 2, softClr, "hPa");
+
+  // Right side: trend word (or how old the data is)
+  if (stale) {
+    char ago[32];
+    formatAgo(ago, sizeof(ago), ageS);
+    drawRightAlignedText(tft, ago, 304, 147, 2, CLR_HOT);
+  } else {
+    const char* word = labelSteady;
+    uint16_t wordClr = CLR_CLOUD;
+    if (trend > 0) { word = labelRising;  wordClr = CLR_WARM; }
+    if (trend < 0) { word = labelFalling; wordClr = CLR_SKY; }
+    const int wordX = 304 - textW(word, 2);
+    drawText(wordX, 147, 2, wordClr, word);
+    drawTrendArrow(wordX - 18, 147, 14, trend);
+  }
+
+  // Scale 970..1050 hPa over x 16..304
+  const int x0 = 16;
+  const int w  = 288;
+  int px = x0 + (int)((pressure - 970.0f) * w / 80.0f);
+  px = constrain(px, x0, x0 + w);
+  tft.fillRoundRect(x0, 192, w, 6, 3, CLR_TRACK);
+  tft.fillRoundRect(x0, 192, px - x0 + 3, 6, 3, valClr);  // filled up to the current value
+  const int normX = x0 + (int)((1013.0f - 970.0f) * w / 80.0f);
+  tft.fillRect(normX, 188, 2, 14, softClr);
+  tft.fillTriangle(px - 8, 178, px + 8, 178, px, 189, stale ? CLR_DIM : CLR_WHITE);
+
+  drawText(x0, 206, 2, softClr, "970");
+  drawCenteredText(tft, "1013", normX, 206, 2, softClr);
+  drawRightAlignedText(tft, "1050", x0 + w, 206, 2, softClr);
+}
+
 /** @brief Render the main readings screen. */
-void drawMainScreen() {
+void drawMainScreen(const UiStatus& st) {
   tft.fillScreen(CLR_BLACK);
+  drawStatusBar(st, labelNow, CFG_GAUGE_STALE_WARN_S, CFG_GAUGE_STALE_OLD_S);
 
-  const int leftCenterX  = tft.width() / 4;
-  const int rightCenterX = (tft.width() * 3) / 4;
+  tft.fillRect(159, 23, 2, 107, CLR_DIV_STRONG);
+  tft.fillRect(0, 130, tft.width(), 2, CLR_DIV_STRONG);
 
-  const int labelY    = 8;
-  const int tempY     = 48;
-  const int humidityY = 130;
+  const bool extStale = haveExtData && freshnessLevel(st, CFG_GAUGE_STALE_WARN_S, CFG_GAUGE_STALE_OLD_S) == 2;
 
-  int midX           = tft.width() / 2;
-  int verticalHeight = 175;
-  tft.drawFastVLine(midX, 0, verticalHeight, CLR_DARKGREY);
-  tft.drawFastVLine(midX + 1, 0, verticalHeight, CLR_DARKGREY);
-  tft.drawFastHLine(0, 35, tft.width(), CLR_DARKGREY);
-  tft.drawFastHLine(0, 36, tft.width(), CLR_DARKGREY);
-  tft.drawFastHLine(0, 115, tft.width(), CLR_DARKGREY);
-  tft.drawFastHLine(0, 116, tft.width(), CLR_DARKGREY);
-  tft.drawFastHLine(0, 175, tft.width(), CLR_DARKGREY);
-  tft.drawFastHLine(0, 176, tft.width(), CLR_DARKGREY);
-
-  drawCenteredText(tft, labelOutside, leftCenterX, labelY, 3, CLR_WHITE);
+  // ---- Outside (left column) ----
+  drawTreeIcon(4, 93, CLR_CLOUD);
   if (haveExtData) {
-    // Format so values like -10.0, 12.3 always fit in the cell
-    char extTempStr[16];
-    formatBigTempNoUnit(extTempStr, sizeof(extTempStr), extTemperature);
-    drawCenteredText(tft, extTempStr, leftCenterX + 5, tempY, 6, colorForTemperature(extTemperature));
+    char tStr[16];
+    formatBigTempNoUnit(tStr, sizeof(tStr), extTemperature);
+    const int tx = 150 - textW(tStr, 6);
+    drawText(tx, 34, 6, extStale ? CLR_DIM : colorForTemperature(extTemperature), tStr);
+    if (!extStale) {
+      // The '.' glyph only uses the bottom rows of its 36 px cell, so the space above it
+      // holds a large trend arrow. Values without a dot ("-12") get the arrow on the left.
+      const char* dot = strchr(tStr, '.');
+      if (dot) {
+        drawTrendArrow(tx + (int)(dot - tStr) * 36 + 6, 38, 18, extTempTrend);
+      } else if (tx >= 24) {
+        drawTrendArrow(tx - 22, 50, 18, extTempTrend);
+      }
+    }
 
-    // Trend indicator: keep it near the left edge so it doesn't clash with the right-aligned numbers.
-    const int triX = 6;
-    drawTrendIndicator(tft, triX, tempY + 48, extTempTrend);
-
-    // External humidity: right aligned, with the trend triangle under it.
-    const int extHumY = humidityY - 4;
-    char extHumStr[10];
-    formatPercent0(extHumStr, sizeof(extHumStr), extHumidity);
-    drawRightAlignedText(tft, extHumStr, midX - 10, humidityY, 4, colorForHumidity(extHumidity));
-    drawTrendIndicator(tft, triX, extHumY + 30, extHumTrend);
+    char hStr[10];
+    formatPercent0(hStr, sizeof(hStr), extHumidity);
+    const int hx = 140 - textW(hStr, 4);
+    drawDrop(hx - 10, 94, 6, extStale ? CLR_SKY_DIM : CLR_SKY);
+    drawText(hx, 90, 4, extStale ? CLR_DIM : CLR_WHITE, hStr);
+    if (!extStale) drawTrendArrow(144, 97, 14, extHumTrend);
   } else {
-    drawCenteredText(tft, labelNoData1, leftCenterX, tempY, 3, CLR_YELLOW);
-    drawCenteredText(tft, labelNoData2, leftCenterX, tempY + 26, 3, CLR_YELLOW);
+    drawCenteredText(tft, labelNoData1, 80, 36, 3, CLR_WARM);
+    drawCenteredText(tft, labelNoData2, 80, 64, 3, CLR_WARM);
   }
 
-  drawCenteredText(tft, labelInside, rightCenterX, labelY, 3, CLR_WHITE);
+  // ---- Inside (right column) ----
+  drawHouseIcon(164, 94, CLR_CLOUD);
   if (haveIntData) {
-    // Keep indoor temperature formatting as before (no need for negative-fit logic here)
-    char intTempStr[16];
-    formatTemp1NoUnit(intTempStr, sizeof(intTempStr), intTemperature);
-    drawCenteredText(tft, intTempStr, rightCenterX + 5, tempY, 6, colorForTemperature(intTemperature));
+    char tStr[16];
+    formatTemp1NoUnit(tStr, sizeof(tStr), intTemperature);
+    drawCenteredText(tft, tStr, 240, 34, 6, colorForTemperature(intTemperature));
 
-    char intHumStr[10];
-    formatPercent0(intHumStr, sizeof(intHumStr), intHumidity);
-    drawCenteredText(tft, intHumStr, rightCenterX, humidityY, 4, colorForHumidity(intHumidity));
+    char hStr[10];
+    formatPercent0(hStr, sizeof(hStr), intHumidity);
+    const int hx = 310 - textW(hStr, 4);
+    drawDrop(hx - 10, 94, 6, CLR_SKY);
+    drawText(hx, 90, 4, CLR_WHITE, hStr);
   } else {
-    drawCenteredText(tft, labelNoData1, rightCenterX, tempY, 3, CLR_YELLOW);
-    drawCenteredText(tft, labelNoData2, rightCenterX, tempY + 26, 3, CLR_YELLOW);
+    drawCenteredText(tft, labelNoData1, 240, 36, 3, CLR_WARM);
+    drawCenteredText(tft, labelNoData2, 240, 64, 3, CLR_WARM);
   }
 
-  if (haveExtData) drawPressureBar(tft, 20, 190, extPressure, extPressTrend);
+  // ---- Pressure ----
+  if (haveExtData) drawPressureBlock(extPressure, extPressTrend, extStale, st.updAgeS);
+
 }
+
+/* -------------------------------------------------------------------------- */
+/*                        Forecast column (shared)                            */
+/* -------------------------------------------------------------------------- */
+
+/** @brief Max temp (size 3, colored) + degree ring, centered on cx at y=118. */
+static void drawMaxTemp(int cx, float tMax, uint16_t color) {
+  char s[8];
+  snprintf(s, sizeof(s), "%d", (int)roundf(tMax));
+  const int w = textW(s, 3);
+  const int x = cx - (w + 10) / 2;
+  drawText(x, 118, 3, color, s);
+  drawDegree(x + w + 6, 121, 3, color);
+}
+
+/** @brief Min temp (size 2) + degree ring, centered on cx at y=146. */
+static void drawMinTemp(int cx, float tMin, uint16_t color) {
+  char s[8];
+  snprintf(s, sizeof(s), "%d", (int)roundf(tMin));
+  const int w = textW(s, 2);
+  const int x = cx - (w + 8) / 2;
+  drawText(x, 146, 2, color, s);
+  tft.drawCircle(x + w + 4, 148, 2, color);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            3-day forecast                                  */
+/* -------------------------------------------------------------------------- */
 
 /** @brief Render the forecast screen. */
-void drawForecastScreen() {
+void drawForecastScreen(const UiStatus& st) {
   tft.fillScreen(CLR_BLACK);
-
-  drawCenteredText(tft, labelForecast, tft.width() / 2, 4, 3, CLR_WHITE);
-  tft.drawFastHLine(0, 35, tft.width(), CLR_DARKGREY); // line under title
+  drawStatusBar(st, labelDays, CFG_FORECAST_STALE_WARN_S, CFG_FORECAST_STALE_OLD_S);
 
   if (forecastCount == 0) {
-    drawCenteredText(tft, labelNoForecast, tft.width() / 2, 120, 3, CLR_YELLOW);
-
+    drawCenteredText(tft, labelNoForecast, tft.width() / 2, 112, 2, CLR_WARM);
     return;
   }
 
-  int colW = tft.width() / 3;
+  const int colW = tft.width() / 3;  // 106
+
+  for (int i = 1; i < 3; i++) {
+    tft.drawFastVLine(i * colW, 23, 217, CLR_DIVIDER);
+  }
+  tft.drawFastHLine(0, 170, tft.width(), CLR_DIVIDER);
 
   for (int i = 0; i < forecastCount && i < 3; i++) {
-    int colStart  = i * colW;
-    int colCenter = colStart + (colW / 2);
-    int colRight  = colStart + colW - 6; // small padding from right edge
+    const ForecastDay& d = forecast[i];
+    const int x0 = i * colW;
+    const int cx = x0 + colW / 2;
 
-    char dayLabel[8];
-    formatDateLabelDDMM(forecast[i].label, dayLabel, sizeof(dayLabel));
-    drawCenteredText(tft, dayLabel, colCenter, 45, 2, CLR_CYAN);
-    DayIcon icon = pickDayIcon(forecast[i].tMax, forecast[i].tMin, forecast[i].precip, forecast[i].cloudMean, forecast[i].wmoCode);
-    drawWeatherIcon(tft, colCenter, 72, icon);
+    char dayLabel[12];
+    formatDateLabelDDMM(d.label, dayLabel, sizeof(dayLabel));
+    drawCenteredText(tft, dayLabel, cx, 32, 2, CLR_SKY);
 
-    char maxStr[16];
-    char minStr[16];
-    formatTempC1(maxStr, sizeof(maxStr), forecast[i].tMax);
-    formatTempC1(minStr, sizeof(minStr), forecast[i].tMin);
-    int rainLiters = (int)(forecast[i].precip + 0.5f);
-    char rainStr[24];
-    snprintf(rainStr, sizeof(rainStr), "%d%s", rainLiters, unitLiters);
+    DayIcon icon = pickDayIcon(d.tMax, d.tMin, d.precip, d.cloudMean, d.wmoCode);
+    drawWeatherIcon(tft, cx, 56, icon);
 
-    // Numbers a bit higher to free space for a readable wind badge
-    drawRightAlignedText(tft, maxStr, colRight, 146, 2, CLR_WHITE);
-    drawRightAlignedText(tft, minStr, colRight, 168, 2, CLR_WHITE);
+    drawMaxTemp(cx, d.tMax, colorForTemperature(d.tMax));
+    drawMinTemp(cx, d.tMin, CLR_CLOUD);
 
-    int rainY = 196;
-    int dropX = colRight - 90; // move left to avoid overlapping text
-    tft.fillTriangle(dropX, rainY - 12, dropX - 6, rainY - 2, dropX + 6, rainY - 2, CLR_BLUE);
-    tft.fillCircle(dropX, rainY - 1, 4, CLR_BLUE);
-    drawRightAlignedText(tft, rainStr, colRight, rainY - 6, 2, CLR_BLUE);
+    // Rain
+    const int rain = (int)(d.precip + 0.5f);
+    char rainStr[16];
+    snprintf(rainStr, sizeof(rainStr), "%d%s", rain, unitLiters);
+    drawDrop(x0 + 20, 185, 4, CLR_SKY);
+    drawText(x0 + 30, 184, 2, rain > 0 ? CLR_SKY : CLR_WHITE, rainStr);
 
-    // Wind (compact): e.g. "10 km". Auto-shrinks if needed.
+    // Wind
+    const int wind = (int)(d.windMax + 0.5f);
     char windStr[24];
-    snprintf(windStr, sizeof(windStr), "%d%s", (int)(forecast[i].windMax + 0.5f), unitKmh);
-    drawWindLabel(tft, colStart + 6, colRight, 212, windStr);
+    if (wind < 100) {
+      snprintf(windStr, sizeof(windStr), "%d%s", wind, unitKmh);
+    } else {
+      snprintf(windStr, sizeof(windStr), "%d", wind);
+    }
+    drawWindIcon(x0 + 14, 213, CLR_MUTED);
+    drawText(x0 + 30, 210, 2, CLR_WHITE, windStr);
   }
 
-  // vertical separators between days
-  int sepYTop    = 22;
-  int sepYBottom = 240;
-  for (int i = 1; i < 3; i++) {
-    int x = i * colW;
-    tft.drawFastVLine(x, sepYTop, sepYBottom - sepYTop, CLR_DARKGREY);
-  }
-
-  // horizontal line under icons
-  tft.drawFastHLine(0, 135, tft.width(), CLR_DARKGREY);
 }
+
+/* -------------------------------------------------------------------------- */
+/*                         Today (4 x 6-hour blocks)                          */
+/* -------------------------------------------------------------------------- */
 
 /** @brief Time range labels for the 4 blocks. */
 static const char* const blockLabels[4] = {"00-06", "06-12", "12-18", "18-24"};
 
-/** @brief Render the today 6-hour forecast screen (2x2 grid). */
-void drawTodayScreen() {
+/** @brief Render today's 6-hour forecast screen (4 columns, current block highlighted). */
+void drawTodayScreen(const UiStatus& st) {
   tft.fillScreen(CLR_BLACK);
+  drawStatusBar(st, labelToday, CFG_FORECAST_STALE_WARN_S, CFG_FORECAST_STALE_OLD_S);
 
   if (!haveTodayForecast) {
-    drawCenteredText(tft, labelToday, tft.width() / 2, 80, 3, CLR_WHITE);
-    drawCenteredText(tft, labelNoHourly, tft.width() / 2, 120, 3, CLR_YELLOW);
+    drawCenteredText(tft, labelNoHourly, tft.width() / 2, 112, 2, CLR_WARM);
     return;
   }
 
-  const int cellW = tft.width() / 2;   // 160
-  const int cellH = tft.height() / 2;  // 120
+  const int colW    = tft.width() / 4;                   // 80
+  const int current = st.clockValid ? (st.hour / 6) : -1; // -1: unknown, no highlight
 
-  // Grid separator lines
-  tft.drawFastVLine(cellW, 0, tft.height(), CLR_DARKGREY);
-  tft.drawFastVLine(cellW + 1, 0, tft.height(), CLR_DARKGREY);
-  tft.drawFastHLine(0, cellH, tft.width(), CLR_DARKGREY);
-  tft.drawFastHLine(0, cellH + 1, tft.width(), CLR_DARKGREY);
+  // Highlight the current block (before grid lines so they stay on top)
+  if (current >= 0) {
+    tft.fillRect(current * colW + 1, 23, colW - 1, 217, CLR_STATUS_BG);
+    tft.fillRect(current * colW + 10, 50, 60, 2, CLR_SKY);
+  }
+
+  for (int i = 1; i < 4; i++) {
+    tft.drawFastVLine(i * colW, 23, 217, CLR_DIVIDER);
+  }
+  tft.drawFastHLine(0, 170, tft.width(), CLR_DIVIDER);
 
   for (int b = 0; b < 4; b++) {
-    int col = b % 2;
-    int row = b / 2;
-    int x0  = col * cellW;
-    int y0  = row * cellH;
-    int cx  = x0 + cellW / 2;
+    const ForecastBlock& fb = todayBlocks[b];
+    const int x0            = b * colW;
+    const int cx            = x0 + colW / 2;
+    const bool isPast       = (current >= 0) && (b < current);
+    const bool isNow        = (b == current);
+    const uint16_t bg       = isNow ? CLR_STATUS_BG : CLR_BLACK;
 
-    // Time range label (+3px down)
-    drawCenteredText(tft, blockLabels[b], cx, y0 + 7, 2, CLR_CYAN);
+    const uint16_t headClr = isPast ? CLR_DIM : (isNow ? CLR_WHITE : CLR_SKY);
+    drawCenteredText(tft, blockLabels[b], cx, 32, 2, headClr);
 
-    if (!todayBlocks[b].valid) {
-      drawCenteredText(tft, "--", cx, y0 + 53, 2, CLR_DARKGREY);
+    if (!fb.valid) {
+      drawCenteredText(tft, "--", cx, 118, 3, CLR_DIM);
       continue;
     }
 
-    // Weather icon (small)
-    DayIcon icon = pickDayIcon(
-      todayBlocks[b].tMax, todayBlocks[b].tMin,
-      todayBlocks[b].precip, todayBlocks[b].cloudMean,
-      todayBlocks[b].wmoCode
-    );
-    drawWeatherIconSmall(tft, cx, y0 + 29, icon);
+    DayIcon icon = pickDayIcon(fb.tMax, fb.tMin, fb.precip, fb.cloudMean, fb.wmoCode);
+    drawWeatherIconSmall(tft, cx, 68, icon, bg, isPast, fb.night);
 
-    // Temperature: "max / min" with drawn degree circles
-    char maxStr[8];
-    char minStr[8];
-    int tMaxI = (int)roundf(todayBlocks[b].tMax);
-    int tMinI = (int)roundf(todayBlocks[b].tMin);
-    snprintf(maxStr, sizeof(maxStr), "%d", tMaxI);
-    snprintf(minStr, sizeof(minStr), "%d", tMinI);
+    drawMaxTemp(cx, fb.tMax, isPast ? CLR_DIM : colorForTemperature(fb.tMax));
+    drawMinTemp(cx, fb.tMin, isPast ? CLR_DIM : CLR_CLOUD);
 
-    // Build "max / min" for centering calculation
-    char tempStr[20];
-    snprintf(tempStr, sizeof(tempStr), "%s  / %s ", maxStr, minStr);
-    float avgTemp = (todayBlocks[b].tMax + todayBlocks[b].tMin) / 2.0f;
-    int tempY = y0 + 70;
-    drawCenteredText(tft, tempStr, cx, tempY, 2, colorForTemperature(avgTemp));
+    // Rain
+    const int rain = (int)(fb.precip + 0.5f);
+    char rainStr[16];
+    snprintf(rainStr, sizeof(rainStr), "%d%s", rain, unitLiters);
+    drawDrop(x0 + 14, 185, 4, isPast ? CLR_SKY_DIM : CLR_SKY);
+    drawText(x0 + 22, 184, 2, isPast ? CLR_DIM : (rain > 0 ? CLR_SKY : CLR_WHITE), rainStr);
 
-    // Draw degree circles after each number
-    // At size 2, each char is 12px wide, 16px tall
-    int tempTotalW = (int)strlen(tempStr) * 12;
-    int tempStartX = cx - tempTotalW / 2;
-    int maxEndX = tempStartX + (int)strlen(maxStr) * 12;
-    tft.drawCircle(maxEndX + 2, tempY + 1, 2, colorForTemperature(avgTemp));
-    int minEndX = tempStartX + ((int)strlen(maxStr) + 4 + (int)strlen(minStr)) * 12;
-    tft.drawCircle(minEndX + 2, tempY + 1, 2, colorForTemperature(avgTemp));
-
-    // Precipitation + Wind on bottom line
-    int rainI = (int)(todayBlocks[b].precip + 0.5f);
-    int windI = (int)(todayBlocks[b].windMax + 0.5f);
-
-    // Rain drop icon + value on left side of cell
-    int infoY = y0 + 99;
-    int dropX = x0 + 18;
-    tft.fillTriangle(dropX, infoY - 8, dropX - 4, infoY, dropX + 4, infoY, CLR_BLUE);
-    tft.fillCircle(dropX, infoY + 1, 3, CLR_BLUE);
-
-    char rainStr[8];
-    snprintf(rainStr, sizeof(rainStr), "%d", rainI);
-    tft.setTextSize(2);
-    tft.setTextColor(CLR_BLUE);
-    tft.setCursor(dropX + 8, infoY - 6);
-    tft.print(rainStr);
-
-    // Wind flag icon + value on right side of cell
-    int windRightX = x0 + cellW - 8;
-    // Small wind flag: a pole with a pennant
-    int flagX = x0 + cellW / 2 + 14;
-    int flagTopY = infoY - 8;
-    tft.drawFastVLine(flagX, flagTopY, 14, CLR_WHITE);           // pole
-    tft.fillTriangle(flagX + 1, flagTopY, flagX + 10, flagTopY + 3,
-                     flagX + 1, flagTopY + 6, CLR_WHITE);        // pennant
-
+    // Wind (number only: "КМ/Ч" does not fit an 80 px column at size 2)
     char windStr[8];
-    snprintf(windStr, sizeof(windStr), "%d", windI);
-    drawRightAlignedText(tft, windStr, windRightX, infoY - 6, 2, CLR_WHITE);
+    snprintf(windStr, sizeof(windStr), "%d", (int)(fb.windMax + 0.5f));
+    drawWindIcon(x0 + 8, 213, isPast ? CLR_DIM : CLR_MUTED);
+    drawText(x0 + 22, 210, 2, isPast ? CLR_DIM : CLR_WHITE, windStr);
   }
+
 }
+
+/* -------------------------------------------------------------------------- */
+/*                                  Init                                      */
+/* -------------------------------------------------------------------------- */
 
 /**
  * @brief Initialize TFT display (rotation, text settings, clear screen).
@@ -386,17 +586,25 @@ void initDisplay() {
   tft.setTextWrap(false);
   tft.fillScreen(CLR_BLACK);
 
-  // Pre-convert all Cyrillic labels once at startup.
-  utf8rus("навън", labelOutside, sizeof(labelOutside));
-  utf8rus("вътре", labelInside, sizeof(labelInside));
-  utf8rus("няма", labelNoData1, sizeof(labelNoData1));
-  utf8rus("данни", labelNoData2, sizeof(labelNoData2));
-  utf8rus("прогноза", labelForecast, sizeof(labelForecast));
-  utf8rus("няма прогноза", labelNoForecast, sizeof(labelNoForecast));
-  utf8rus("днес", labelToday, sizeof(labelToday));
-  utf8rus("няма данни", labelNoHourly, sizeof(labelNoHourly));
+  // Pre-convert all Cyrillic labels once at startup (uppercase reads better on this panel).
+  utf8rus("СЕГА", labelNow, sizeof(labelNow));
+  utf8rus("3 ДНИ", labelDays, sizeof(labelDays));
+  utf8rus("ДНЕС", labelToday, sizeof(labelToday));
+  utf8rus("НЯМА WIFI", labelNoWifi, sizeof(labelNoWifi));
+  utf8rus("СВЪРЗВАНЕ", labelConnecting, sizeof(labelConnecting));
+  utf8rus("НЯМА", labelNoData1, sizeof(labelNoData1));
+  utf8rus("ДАННИ", labelNoData2, sizeof(labelNoData2));
+  utf8rus("НЯМА ПРОГНОЗА", labelNoForecast, sizeof(labelNoForecast));
+  utf8rus("НЯМА ДАННИ", labelNoHourly, sizeof(labelNoHourly));
+  utf8rus("РАСТЕ", labelRising, sizeof(labelRising));
+  utf8rus("ПАДА", labelFalling, sizeof(labelFalling));
+  utf8rus("СТАБИЛНО", labelSteady, sizeof(labelSteady));
+  utf8rus("ПРЕДИ ", labelAgo, sizeof(labelAgo));
+  utf8rus("МИН", unitMin, sizeof(unitMin));
+  utf8rus("Ч", unitHour, sizeof(unitHour));
+  utf8rus("Д", unitDay, sizeof(unitDay));
   utf8rus(" Л", unitLiters, sizeof(unitLiters));
-  utf8rus(" кмч", unitKmh, sizeof(unitKmh));
+  utf8rus("КМ/Ч", unitKmh, sizeof(unitKmh));
 
   initUtilLabels();
 }

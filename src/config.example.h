@@ -32,6 +32,15 @@
 
 // WiFi
 #define CFG_WIFI_RECONNECT_INTERVAL_MS     15000UL
+// After this long without WiFi the status bar shows "НЯМА WIFI" instead of "СВЪРЗВАНЕ".
+#define CFG_WIFI_DOWN_ALERT_MS             60000UL
+
+// Status bar: age of the last update (seconds) at which its time turns amber / red.
+// Past the "old" limit on the main screen the outdoor values are greyed out.
+#define CFG_GAUGE_STALE_WARN_S             600UL
+#define CFG_GAUGE_STALE_OLD_S              1800UL
+#define CFG_FORECAST_STALE_WARN_S          5400UL
+#define CFG_FORECAST_STALE_OLD_S           10800UL
 
 // Timekeeping
 // How often to resync the millis-based clock from NTP time.
@@ -75,4 +84,4 @@
 // Endpoints
 #define CFG_GAUGE_URL    "https://meter.ac/gs/nodes/N200/gauge.txt"
 #define CFG_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,cloud_cover_mean&models=ecmwf_ifs&timezone=auto"
-#define CFG_HOURLY_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&hourly=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&forecast_days=1&models=ecmwf_ifs&timezone=auto"
+#define CFG_HOURLY_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&hourly=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,is_day&forecast_days=1&models=ecmwf_ifs&timezone=auto"

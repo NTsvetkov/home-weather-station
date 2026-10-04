@@ -44,6 +44,10 @@
 #ifndef CFG_WIFI_RECONNECT_INTERVAL_MS
 #define CFG_WIFI_RECONNECT_INTERVAL_MS 15000UL
 #endif
+// After this long without WiFi the status bar shows "НЯМА WIFI" instead of "СВЪРЗВАНЕ".
+#ifndef CFG_WIFI_DOWN_ALERT_MS
+#define CFG_WIFI_DOWN_ALERT_MS 60000UL
+#endif
 
 #ifndef CFG_TEMP_DELTA_C
 #define CFG_TEMP_DELTA_C 0.2f
@@ -125,6 +129,9 @@ static bool startupGaugePending     = true;
 static bool firstExtRedrawDone      = false;
 static bool extDataRedrawPending    = false;
 static uint8_t startupGaugeAttempts = 0;
+static bool forecastEverOk          = false;
+static bool wifiDownTimerRunning    = false;
+static uint32_t wifiDownSinceMs     = 0;
 
 const uint32_t STARTUP_GAUGE_RETRY_INTERVAL_MS = (uint32_t)CFG_STARTUP_GAUGE_RETRY_INTERVAL_MS;
 const uint8_t STARTUP_GAUGE_MAX_ATTEMPTS       = (uint8_t)CFG_STARTUP_GAUGE_MAX_ATTEMPTS;
@@ -138,6 +145,7 @@ const uint32_t FORECAST_SCREEN_DURATION_MS   = (uint32_t)CFG_FORECAST_SCREEN_DUR
 const uint32_t TODAY_SCREEN_DURATION_MS      = (uint32_t)CFG_TODAY_SCREEN_DURATION_MS;
 const uint32_t INTERNAL_READ_INTERVAL_MS     = (uint32_t)CFG_INTERNAL_READ_INTERVAL_MS;
 const uint32_t WIFI_RECONNECT_INTERVAL_MS    = (uint32_t)CFG_WIFI_RECONNECT_INTERVAL_MS;
+const uint32_t WIFI_DOWN_ALERT_MS            = (uint32_t)CFG_WIFI_DOWN_ALERT_MS;
 
 const uint32_t TIME_SYNC_INTERVAL_MS         = (uint32_t)CFG_TIME_SYNC_INTERVAL_MS;
 const uint32_t TIME_SYNC_RETRY_MS            = (uint32_t)CFG_TIME_SYNC_RETRY_MS;
@@ -212,6 +220,59 @@ static bool getLocalDateYYYYMMDD_fromTimekeeper(uint32_t nowMs, char* out, size_
   localtime_r(&est, &timeinfo);
 
   return snprintf(out, outLen, "%04d-%02d-%02d", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday) > 0;
+}
+
+/**
+ * @brief Current epoch estimate from the timekeeper (valid only when tk.valid).
+ */
+static time_t timekeeperNow(uint32_t nowMs) {
+  return tk.baseEpoch + (time_t)((nowMs - tk.baseMillis) / 1000UL);
+}
+
+/**
+ * @brief Collect WiFi / clock / last-update info for the status bar.
+ * @param forForecast true for the forecast screens (use forecast update time),
+ *                    false for the main screen (use gauge update time).
+ */
+static UiStatus buildUiStatus(uint32_t nowMs, bool forForecast) {
+  UiStatus st;
+
+  if (!wifiConfigured) {
+    st.wifi = WIFI_UI_DOWN;
+  } else if (WiFi.status() == WL_CONNECTED) {
+    st.wifi = WIFI_UI_OK;
+    st.rssi = WiFi.RSSI();
+  } else if (wifiDownTimerRunning && (nowMs - wifiDownSinceMs) >= WIFI_DOWN_ALERT_MS) {
+    st.wifi = WIFI_UI_DOWN;
+  } else {
+    st.wifi = WIFI_UI_CONNECTING;
+  }
+
+  time_t nowEpoch = 0;
+  if (tk.valid) {
+    nowEpoch = timekeeperNow(nowMs);
+    struct tm ti;
+    localtime_r(&nowEpoch, &ti);
+    st.clockValid = true;
+    st.hour       = (uint8_t)ti.tm_hour;
+  }
+
+  const bool have       = forForecast ? forecastEverOk : haveExtData;
+  const uint32_t succMs = forForecast ? lastForecastSuccessMs : lastGaugeSuccessMs;
+  if (have) {
+    st.haveUpdate = true;
+    st.updAgeS    = (nowMs - succMs) / 1000UL;
+    if (tk.valid) {
+      time_t updEpoch = nowEpoch - (time_t)st.updAgeS;
+      struct tm ti;
+      localtime_r(&updEpoch, &ti);
+      st.updTimeValid = true;
+      st.updHour      = (uint8_t)ti.tm_hour;
+      st.updMin       = (uint8_t)ti.tm_min;
+    }
+  }
+
+  return st;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -361,6 +422,14 @@ void loop() {
     }
   }
 
+  // Track how long WiFi has been down (for the status bar).
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiDownTimerRunning = false;
+  } else if (!wifiDownTimerRunning) {
+    wifiDownTimerRunning = true;
+    wifiDownSinceMs      = now;
+  }
+
   // Attempt WiFi reconnect if credentials are configured.
   if (wifiConfigured && WiFi.status() != WL_CONNECTED) {
     if (now - lastWifiAttemptMs >= WIFI_RECONNECT_INTERVAL_MS) {
@@ -387,10 +456,11 @@ void loop() {
   }
 
   if (needRedraw) {
+    const UiStatus st = buildUiStatus(now, !isMainScreen());
     switch (screenCycleIndex) {
-      case 1: drawForecastScreen(); break;
-      case 3: drawTodayScreen();    break;
-      default: drawMainScreen();    break; // 0 and 2
+      case 1: drawForecastScreen(st); break;
+      case 3: drawTodayScreen(st);    break;
+      default: drawMainScreen(st);    break; // 0 and 2
     }
     needRedraw = false;
   }
@@ -471,6 +541,7 @@ void loop() {
       if (dailyOk || hourlyOk) {
         lastForecastSuccessMs   = now;
         midnightForecastPending = false;
+        forecastEverOk          = true;
       }
       lastForecastFetchMs = now;
     }

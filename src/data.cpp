@@ -46,7 +46,7 @@
   #define CFG_FORECAST_JSON_DOC_CAPACITY 8000
 #endif
 #ifndef CFG_HOURLY_FORECAST_URL
-  #define CFG_HOURLY_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&hourly=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m&forecast_days=1&models=ecmwf_ifs&timezone=auto"
+  #define CFG_HOURLY_FORECAST_URL "https://api.open-meteo.com/v1/forecast?latitude=42.1859191&longitude=24.3398302&hourly=temperature_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,is_day&forecast_days=1&models=ecmwf_ifs&timezone=auto"
 #endif
 #ifndef CFG_HOURLY_JSON_DOC_CAPACITY
   #define CFG_HOURLY_JSON_DOC_CAPACITY 4000
@@ -428,6 +428,7 @@ bool fetchHourlyForecast() {
   hourlyFilter["weather_code"]        = true;
   hourlyFilter["cloud_cover"]         = true;
   hourlyFilter["wind_speed_10m"]      = true;
+  hourlyFilter["is_day"]              = true;
 
   DynamicJsonDocument doc(CFG_HOURLY_JSON_DOC_CAPACITY);
   WiFiClient* stream       = https.getStreamPtr();
@@ -444,6 +445,8 @@ bool fetchHourlyForecast() {
   JsonArray codeArr  = doc["hourly"]["weather_code"].as<JsonArray>();
   JsonArray cloudArr = doc["hourly"]["cloud_cover"].as<JsonArray>();
   JsonArray windArr  = doc["hourly"]["wind_speed_10m"].as<JsonArray>();
+  // Optional: older URLs in config.h may not request is_day.
+  JsonArray dayArr   = doc["hourly"]["is_day"].as<JsonArray>();
 
   if (!tempArr || !precArr || !codeArr || !cloudArr || !windArr) {
     LOG_E("Hourly: missing arrays in response");
@@ -458,11 +461,13 @@ bool fetchHourlyForecast() {
     todayBlocks[b].windMax   = 0.0f;
     todayBlocks[b].cloudMean = 0.0f;
     todayBlocks[b].wmoCode   = 0;
+    todayBlocks[b].night     = false;
     todayBlocks[b].valid     = false;
   }
 
   int blockCounts[4] = {0, 0, 0, 0};
   int worstSeverity[4] = {0, 0, 0, 0};
+  int dayHours[4]      = {0, 0, 0, 0};
 
   // Aggregate hourly values into 6-hour blocks
   size_t count = tempArr.size();
@@ -477,6 +482,9 @@ bool fetchHourlyForecast() {
     int   c = codeArr[h].as<int>();
     float cl = cloudArr[h].as<float>();
     float w = windArr[h].as<float>();
+    // Daylight: from the API when available, otherwise a rough 07:00-19:00 fallback.
+    bool isDay = dayArr ? (dayArr[h].as<int>() != 0) : (h >= 7 && h < 19);
+    if (isDay) dayHours[block]++;
 
     if (t < todayBlocks[block].tMin) todayBlocks[block].tMin = t;
     if (t > todayBlocks[block].tMax) todayBlocks[block].tMax = t;
@@ -499,6 +507,7 @@ bool fetchHourlyForecast() {
   for (int b = 0; b < 4; b++) {
     if (blockCounts[b] > 0) {
       todayBlocks[b].cloudMean /= (float)blockCounts[b];
+      todayBlocks[b].night      = (dayHours[b] * 2 < blockCounts[b]);  // mostly dark
       validBlocks++;
     }
   }

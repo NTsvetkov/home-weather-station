@@ -101,7 +101,7 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
     int sunY = isPartly ? (baseY - 9) : (baseY - 6);
     // Make the sun a bit larger for "partly" so it remains clearly visible.
     int sunR = isPartly ? 14 : 16;
-    gfx.fillCircle(sunX, sunY, sunR, CLR_YELLOW);
+    gfx.fillCircle(sunX, sunY, sunR, CLR_SUN);
     constexpr float RAY_STEP = PI / 4.0f;
     for (int i = 0; i < 8; i++) {
       float angle = i * RAY_STEP;
@@ -110,8 +110,8 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
       int x2 = sunX + cos(angle) * (sunR + 11);
       int y2 = sunY + sin(angle) * (sunR + 11);
       // Thicker rays (draw twice with a 1px offset)
-      gfx.drawLine(x1, y1, x2, y2, CLR_YELLOW);
-      gfx.drawLine(x1 + 1, y1, x2 + 1, y2, CLR_YELLOW);
+      gfx.drawLine(x1, y1, x2, y2, CLR_SUN);
+      gfx.drawLine(x1 + 1, y1, x2 + 1, y2, CLR_SUN);
     }
     if (isClear) return;
     // if partly cloudy -> continue and draw cloud on top
@@ -120,22 +120,22 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   // cloud base
   if (isCloudy || isRain || isSnow || isThunder) {
     // Slightly smaller clouds so the sun in "partly" icons remains visible.
-    gfx.fillRoundRect(centerX - 31, baseY - 17, 62, 26, 8, CLR_LIGHTGREY);
-    gfx.fillCircle(centerX - 15, baseY - 17, 11, CLR_LIGHTGREY);
-    gfx.fillCircle(centerX + 10, baseY - 17, 13, CLR_LIGHTGREY);
+    gfx.fillRoundRect(centerX - 31, baseY - 17, 62, 26, 8, CLR_CLOUD);
+    gfx.fillCircle(centerX - 15, baseY - 17, 11, CLR_CLOUD);
+    gfx.fillCircle(centerX + 10, baseY - 17, 13, CLR_CLOUD);
   }
 
   if (isRain) {
     // Thicker rain streaks (3px) so they remain readable on the TFT.
     // Using fillRect also makes them look smoother than single-pixel lines.
-    gfx.fillRect(centerX - 18, baseY + 4, 3, 18, CLR_CYAN);
-    gfx.fillRect(centerX - 2, baseY + 6, 3, 18, CLR_CYAN);
-    gfx.fillRect(centerX + 14, baseY + 4, 3, 18, CLR_CYAN);
+    gfx.fillRect(centerX - 18, baseY + 4, 3, 18, CLR_SKY);
+    gfx.fillRect(centerX - 2, baseY + 6, 3, 18, CLR_SKY);
+    gfx.fillRect(centerX + 14, baseY + 4, 3, 18, CLR_SKY);
   }
   if (icon == ICON_HEAVY_RAIN) {
     // Extra streaks for heavy rain
-    gfx.fillRect(centerX - 34, baseY + 2, 3, 20, CLR_CYAN);
-    gfx.fillRect(centerX + 31, baseY + 2, 3, 20, CLR_CYAN);
+    gfx.fillRect(centerX - 34, baseY + 2, 3, 20, CLR_SKY);
+    gfx.fillRect(centerX + 31, baseY + 2, 3, 20, CLR_SKY);
   }
 
   if (isSnow) {
@@ -146,16 +146,20 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
   }
 
   if (isThunder) {
-    gfx.drawLine(centerX - 6, baseY - 6, centerX + 2, baseY + 6, CLR_YELLOW);
-    gfx.drawLine(centerX + 2, baseY + 6, centerX - 6, baseY + 6, CLR_YELLOW);
-    gfx.drawLine(centerX - 6, baseY + 6, centerX + 6, baseY + 20, CLR_YELLOW);
+    gfx.drawLine(centerX - 6, baseY - 6, centerX + 2, baseY + 6, CLR_SUN);
+    gfx.drawLine(centerX + 2, baseY + 6, centerX - 6, baseY + 6, CLR_SUN);
+    gfx.drawLine(centerX - 6, baseY + 6, centerX + 6, baseY + 20, CLR_SUN);
   }
 }
 
 /** @brief Draw a smaller weather icon (~60% scale) for the today screen. */
-void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
+void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon, uint16_t bg, bool dim, bool night) {
+  const uint16_t sunC   = dim ? CLR_SUN_DIM : CLR_SUN;
+  const uint16_t cloudC = dim ? CLR_CLOUD_DIM : CLR_CLOUD;
+  const uint16_t skyC   = dim ? CLR_SKY_DIM : CLR_SKY;
+  const uint16_t snowC  = dim ? CLR_CLOUD_DIM : CLR_WHITE;
   int baseY = topY + 16;
-  gfx.fillRect(centerX - 30, topY, 60, 40, CLR_BLACK);
+  gfx.fillRect(centerX - 30, topY, 60, 40, bg);
 
   bool isThunder = (icon == ICON_STORM);
   bool isSnow    = (icon == ICON_SNOW);
@@ -164,11 +168,32 @@ void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon
   bool isPartly  = (icon == ICON_PARTLY);
   bool isCloudy  = (icon == ICON_CLOUDY || isRain || isSnow || isThunder || isPartly);
 
-  if (isClear || isPartly) {
+  if (night && (isClear || isPartly)) {
+    // Crescent moon: a full disc with an offset disc in the background color cut out of it.
+    const uint16_t moonC = dim ? CLR_CLOUD_DIM : CLR_MOON;
+    int mX = isPartly ? (centerX - 17) : (centerX - 3);
+    int mY = isPartly ? (baseY - 13) : (baseY - 4);
+    int mR = isPartly ? 8 : 10;
+    gfx.fillCircle(mX, mY, mR, moonC);
+    if (isPartly) {
+      // Opening towards the cloud, so the visible rim is the upper-left part.
+      gfx.fillCircle(mX + 4, mY + 2, mR - 2, bg);
+    } else {
+      gfx.fillCircle(mX + mR / 2 + 1, mY - mR / 3, mR - 1, bg);
+    }
+    if (isClear) {
+      // Two small stars to the right of the crescent
+      gfx.drawFastHLine(centerX + 13, baseY - 11, 3, moonC);
+      gfx.drawFastVLine(centerX + 14, baseY - 12, 3, moonC);
+      gfx.drawFastHLine(centerX + 9, baseY + 3, 3, moonC);
+      gfx.drawFastVLine(centerX + 10, baseY + 2, 3, moonC);
+      return;
+    }
+  } else if (isClear || isPartly) {
     int sunX = isPartly ? (centerX - 12) : centerX;
     int sunY = isPartly ? (baseY - 6) : (baseY - 4);
     int sunR = isPartly ? 8 : 10;
-    gfx.fillCircle(sunX, sunY, sunR, CLR_YELLOW);
+    gfx.fillCircle(sunX, sunY, sunR, sunC);
     constexpr float RAY_STEP = PI / 4.0f;
     for (int i = 0; i < 8; i++) {
       float angle = i * RAY_STEP;
@@ -176,38 +201,38 @@ void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon
       int y1 = sunY + sin(angle) * (sunR + 3);
       int x2 = sunX + cos(angle) * (sunR + 7);
       int y2 = sunY + sin(angle) * (sunR + 7);
-      gfx.drawLine(x1, y1, x2, y2, CLR_YELLOW);
+      gfx.drawLine(x1, y1, x2, y2, sunC);
     }
     if (isClear) return;
   }
 
   if (isCloudy || isRain || isSnow || isThunder) {
-    gfx.fillRoundRect(centerX - 19, baseY - 10, 38, 16, 5, CLR_LIGHTGREY);
-    gfx.fillCircle(centerX - 9, baseY - 10, 7, CLR_LIGHTGREY);
-    gfx.fillCircle(centerX + 6, baseY - 10, 8, CLR_LIGHTGREY);
+    gfx.fillRoundRect(centerX - 19, baseY - 10, 38, 16, 5, cloudC);
+    gfx.fillCircle(centerX - 9, baseY - 10, 7, cloudC);
+    gfx.fillCircle(centerX + 6, baseY - 10, 8, cloudC);
   }
 
   if (isRain) {
-    gfx.fillRect(centerX - 11, baseY + 3, 2, 11, CLR_CYAN);
-    gfx.fillRect(centerX - 1, baseY + 4, 2, 11, CLR_CYAN);
-    gfx.fillRect(centerX + 9, baseY + 3, 2, 11, CLR_CYAN);
+    gfx.fillRect(centerX - 11, baseY + 3, 2, 11, skyC);
+    gfx.fillRect(centerX - 1, baseY + 4, 2, 11, skyC);
+    gfx.fillRect(centerX + 9, baseY + 3, 2, 11, skyC);
   }
   if (icon == ICON_HEAVY_RAIN) {
-    gfx.fillRect(centerX - 21, baseY + 2, 2, 12, CLR_CYAN);
-    gfx.fillRect(centerX + 19, baseY + 2, 2, 12, CLR_CYAN);
+    gfx.fillRect(centerX - 21, baseY + 2, 2, 12, skyC);
+    gfx.fillRect(centerX + 19, baseY + 2, 2, 12, skyC);
   }
 
   if (isSnow) {
-    gfx.drawLine(centerX - 8, baseY + 4, centerX - 3, baseY + 9, CLR_WHITE);
-    gfx.drawLine(centerX - 8, baseY + 9, centerX - 3, baseY + 4, CLR_WHITE);
-    gfx.drawLine(centerX + 3, baseY + 4, centerX + 8, baseY + 9, CLR_WHITE);
-    gfx.drawLine(centerX + 3, baseY + 9, centerX + 8, baseY + 4, CLR_WHITE);
+    gfx.drawLine(centerX - 8, baseY + 4, centerX - 3, baseY + 9, snowC);
+    gfx.drawLine(centerX - 8, baseY + 9, centerX - 3, baseY + 4, snowC);
+    gfx.drawLine(centerX + 3, baseY + 4, centerX + 8, baseY + 9, snowC);
+    gfx.drawLine(centerX + 3, baseY + 9, centerX + 8, baseY + 4, snowC);
   }
 
   if (isThunder) {
-    gfx.drawLine(centerX - 4, baseY - 4, centerX + 1, baseY + 4, CLR_YELLOW);
-    gfx.drawLine(centerX + 1, baseY + 4, centerX - 4, baseY + 4, CLR_YELLOW);
-    gfx.drawLine(centerX - 4, baseY + 4, centerX + 4, baseY + 13, CLR_YELLOW);
+    gfx.drawLine(centerX - 4, baseY - 4, centerX + 1, baseY + 4, sunC);
+    gfx.drawLine(centerX + 1, baseY + 4, centerX - 4, baseY + 4, sunC);
+    gfx.drawLine(centerX - 4, baseY + 4, centerX + 4, baseY + 13, sunC);
   }
 }
 
@@ -289,13 +314,13 @@ static char dowBuf[7][8];
  * formatDateLabelDDMM() calls.
  */
 void initUtilLabels() {
-  utf8rus("Нд", dowBuf[0], sizeof(dowBuf[0]));  // 0 = Sunday
-  utf8rus("Пн", dowBuf[1], sizeof(dowBuf[1]));  // 1 = Monday
-  utf8rus("Вт", dowBuf[2], sizeof(dowBuf[2]));  // 2 = Tuesday
-  utf8rus("Ср", dowBuf[3], sizeof(dowBuf[3]));  // 3 = Wednesday
-  utf8rus("Чт", dowBuf[4], sizeof(dowBuf[4]));  // 4 = Thursday
-  utf8rus("Пт", dowBuf[5], sizeof(dowBuf[5]));  // 5 = Friday
-  utf8rus("Сб", dowBuf[6], sizeof(dowBuf[6]));  // 6 = Saturday
+  utf8rus("НД", dowBuf[0], sizeof(dowBuf[0]));  // 0 = Sunday
+  utf8rus("ПН", dowBuf[1], sizeof(dowBuf[1]));  // 1 = Monday
+  utf8rus("ВТ", dowBuf[2], sizeof(dowBuf[2]));  // 2 = Tuesday
+  utf8rus("СР", dowBuf[3], sizeof(dowBuf[3]));  // 3 = Wednesday
+  utf8rus("ЧТ", dowBuf[4], sizeof(dowBuf[4]));  // 4 = Thursday
+  utf8rus("ПТ", dowBuf[5], sizeof(dowBuf[5]));  // 5 = Friday
+  utf8rus("СБ", dowBuf[6], sizeof(dowBuf[6]));  // 6 = Saturday
 }
 
 /**
