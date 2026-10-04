@@ -4,15 +4,7 @@
 #include <cstring>
 #include <time.h>
 
-// Local secrets are expected in src/config.h (ignored by git).
-// CI/builds without secrets should still compile, so fall back to config.example.h.
-#if defined(__has_include)
-#if __has_include("config.h")
-#include "config.h"
-#elif __has_include("config.example.h")
-#include "config.example.h"
-#endif
-#endif
+#include "project_config.h"
 
 #ifndef WIFI_SSID
 #define WIFI_SSID ""
@@ -99,14 +91,37 @@
 /*                              State Variables                               */
 /* -------------------------------------------------------------------------- */
 
-/** @brief Last millis() when gauge fetch was attempted. */
-uint32_t lastGaugeAttemptMs         = 0;
-/** @brief Last millis() when gauge fetch succeeded. */
-uint32_t lastGaugeSuccessMs         = 0;
-/** @brief Last millis() when forecast fetch was attempted. */
-uint32_t lastForecastFetchMs        = 0;
-/** @brief Last millis() when forecast fetch succeeded. */
-uint32_t lastForecastSuccessMs      = 0;
+// All retries use the completion time, including failed requests at boot/midnight.
+struct FetchSchedule {
+  bool attempted = false;
+  bool haveSuccess = false;
+  uint8_t failures = 0;
+  uint32_t lastAttemptMs = 0;
+  uint32_t lastSuccessMs = 0;
+
+  bool due(uint32_t now, uint32_t normal, uint32_t retry) const {
+    uint32_t interval = normal;
+    if (failures) {
+      const uint8_t shift = failures > 5 ? 4 : failures - 1;
+      uint64_t backoff = (uint64_t)retry << shift;
+      interval = backoff > normal ? normal : (uint32_t)backoff;
+    }
+    return !attempted || now - lastAttemptMs >= interval;
+  }
+  void finished(bool ok) {
+    attempted = true;
+    lastAttemptMs = millis();
+    if (ok) {
+      haveSuccess = true;
+      lastSuccessMs = lastAttemptMs;
+      failures = 0;
+    } else if (failures < 255) {
+      ++failures;
+    }
+  }
+  void refresh() { attempted = false; failures = 0; }
+};
+static FetchSchedule gaugeSchedule, dailySchedule, hourlySchedule;
 uint32_t lastScreenSwitchMs         = 0;
 uint32_t currentScreenDuration      = 0;
 uint32_t lastIntReadMs              = 0;
@@ -117,19 +132,15 @@ uint32_t lastIntReadMs              = 0;
 uint8_t screenCycleIndex            = 0;
 bool needRedraw                     = true;
 
-static bool midnightForecastPending = false;
 static char lastNtpDate[11]         = {0};
 static bool lastNtpDateValid        = false;
-static bool gaugeRetryPending       = true;
 
 static bool wifiConfigured          = false;
 static uint32_t lastWifiAttemptMs   = 0;
 static bool ntpConfigured           = false;
-static bool startupGaugePending     = true;
 static bool firstExtRedrawDone      = false;
 static bool extDataRedrawPending    = false;
 static uint8_t startupGaugeAttempts = 0;
-static bool forecastEverOk          = false;
 static bool wifiDownTimerRunning    = false;
 static uint32_t wifiDownSinceMs     = 0;
 
@@ -231,10 +242,9 @@ static time_t timekeeperNow(uint32_t nowMs) {
 
 /**
  * @brief Collect WiFi / clock / last-update info for the status bar.
- * @param forForecast true for the forecast screens (use forecast update time),
- *                    false for the main screen (use gauge update time).
+ * @param screen Current screen cycle index (separate daily/hourly update times).
  */
-static UiStatus buildUiStatus(uint32_t nowMs, bool forForecast) {
+static UiStatus buildUiStatus(uint32_t nowMs, uint8_t screen) {
   UiStatus st;
 
   if (!wifiConfigured) {
@@ -257,11 +267,14 @@ static UiStatus buildUiStatus(uint32_t nowMs, bool forForecast) {
     st.hour       = (uint8_t)ti.tm_hour;
   }
 
-  const bool have       = forForecast ? forecastEverOk : haveExtData;
-  const uint32_t succMs = forForecast ? lastForecastSuccessMs : lastGaugeSuccessMs;
-  if (have) {
+  const FetchSchedule& schedule = screen == 1 ? dailySchedule : (screen == 3 ? hourlySchedule : gaugeSchedule);
+  const bool have = screen == 1 ? forecastCount > 0 : (screen == 3 ? haveTodayForecast : haveExtData);
+  if (have && schedule.haveSuccess) {
     st.haveUpdate = true;
-    st.updAgeS    = (nowMs - succMs) / 1000UL;
+    st.updAgeS = (nowMs - schedule.lastSuccessMs) / 1000UL;
+    if (screen != 1 && screen != 3 && tk.valid && gaugeObservationEpoch) {
+      st.updAgeS = nowEpoch > gaugeObservationEpoch ? (uint32_t)(nowEpoch - gaugeObservationEpoch) : 0;
+    }
     if (tk.valid) {
       time_t updEpoch = nowEpoch - (time_t)st.updAgeS;
       struct tm ti;
@@ -292,8 +305,7 @@ void setup() {
   initDisplay();
   LOG_I("Display initialized");
 
-  initSensors();
-  LOG_I("Sensors initialized");
+  if (initSensors()) LOG_I("Sensors initialized");
 
   // Prime internal readings so the first screen draw doesn't show "no data" for ~2s.
   {
@@ -302,6 +314,7 @@ void setup() {
       intTemperature = t;
       intHumidity    = h;
       haveIntData    = true;
+      LOG_I("Indoor: %.1f C, %.0f%%", t, h);
     } else {
       haveIntData = false;
     }
@@ -323,8 +336,9 @@ void setup() {
     LOG_W("WiFi: no credentials configured");
   }
 
-  lastForecastFetchMs   = 0;
-  lastForecastSuccessMs = 0;
+  gaugeSchedule = {};
+  dailySchedule = {};
+  hourlySchedule = {};
   screenCycleIndex      = 0;
   lastScreenSwitchMs    = millis();
   lastIntReadMs         = 0;
@@ -332,11 +346,9 @@ void setup() {
   needRedraw            = true;
 
   // External readings will be fetched once WiFi connects.
-  startupGaugePending   = true;
   firstExtRedrawDone    = false;
   extDataRedrawPending  = false;
   startupGaugeAttempts  = 0;
-  gaugeRetryPending     = true;
 
   // Reset timekeeper state.
   tk = {};
@@ -414,7 +426,13 @@ void loop() {
     if (getLocalDateYYYYMMDD_fromTimekeeper(now, d, sizeof(d))) {
       if (lastNtpDateValid && memcmp(d, lastNtpDate, 10) != 0) {
         LOG_I("Midnight rollover: %s -> %s", lastNtpDate, d);
-        midnightForecastPending = true;
+        dailySchedule.refresh();
+        hourlySchedule.refresh();
+        // Yesterday's blocks must never be displayed under today's heading.
+        if (haveTodayForecast && strcmp(todayForecastDate, d) != 0) {
+          haveTodayForecast = false;
+          if (screenCycleIndex == 3) needRedraw = true;
+        }
       }
       strncpy(lastNtpDate, d, sizeof(lastNtpDate));
       lastNtpDate[sizeof(lastNtpDate) - 1] = '\0';
@@ -456,7 +474,7 @@ void loop() {
   }
 
   if (needRedraw) {
-    const UiStatus st = buildUiStatus(now, !isMainScreen());
+    const UiStatus st = buildUiStatus(now, screenCycleIndex);
     switch (screenCycleIndex) {
       case 1: drawForecastScreen(st); break;
       case 3: drawTodayScreen(st);    break;
@@ -465,86 +483,29 @@ void loop() {
     needRedraw = false;
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
-    // One-time startup gauge fetch as soon as WiFi comes up.
-    // This keeps boot fast (no blocking wait), but still populates the main screen quickly.
-    if (startupGaugePending && !haveExtData && startupGaugeAttempts < STARTUP_GAUGE_MAX_ATTEMPTS) {
-      if (startupGaugeAttempts == 0 || (now - lastGaugeAttemptMs) >= STARTUP_GAUGE_RETRY_INTERVAL_MS) {
-        bool ok = fetchGaugeData();
-        if (!ok) {
-          // One quick retry; HTTPS can fail on first handshake after boot.
-          delay(150);
-          yield();
-          ok = fetchGaugeData();
-        }
-        startupGaugeAttempts++;
-        lastGaugeAttemptMs = now;
-
-        if (ok) {
-          lastGaugeSuccessMs = now;
-          gaugeRetryPending  = false;
-
-          // Ensure the main screen will update exactly once to replace "няма данни".
-          if (!firstExtRedrawDone) {
-            if (isMainScreen()) {
-              // We may have been blocked in this loop for several seconds while fetching.
-              // Reset the screen timer so we don't immediately switch away before the redraw runs.
-              resetToMainScreen(now);
-              firstExtRedrawDone    = true;
-            } else {
-              extDataRedrawPending = true;
-            }
-          }
-
-          startupGaugePending = false;
+  // At most one blocking request per loop; sensors and display run between them.
+  // Certificate validation requires a valid clock, so boot waits for NTP.
+  if (WiFi.status() == WL_CONNECTED && tk.valid) {
+    const uint32_t retry = !gaugeSchedule.haveSuccess && startupGaugeAttempts < STARTUP_GAUGE_MAX_ATTEMPTS
+        ? STARTUP_GAUGE_RETRY_INTERVAL_MS : GAUGE_RETRY_INTERVAL_MS;
+    if (gaugeSchedule.due(now, GAUGE_FETCH_INTERVAL_MS, retry)) {
+      const bool ok = fetchGaugeData();
+      gaugeSchedule.finished(ok);
+      if (startupGaugeAttempts < STARTUP_GAUGE_MAX_ATTEMPTS) ++startupGaugeAttempts;
+      if (ok && !firstExtRedrawDone) {
+        if (isMainScreen()) {
+          resetToMainScreen(millis());
+          firstExtRedrawDone = true;
         } else {
-          gaugeRetryPending = true;
+          extDataRedrawPending = true;
         }
       }
-    } else if (haveExtData) {
-      startupGaugePending = false;
+    } else if (dailySchedule.due(now, FORECAST_FETCH_INTERVAL_MS, FORECAST_RETRY_INTERVAL_MS)) {
+      dailySchedule.finished(fetchForecast());
+    } else if (hourlySchedule.due(now, FORECAST_FETCH_INTERVAL_MS, FORECAST_RETRY_INTERVAL_MS)) {
+      hourlySchedule.finished(fetchHourlyForecast());
     }
-
-    // Gauge fetch: retry more frequently after a failure (or at boot when no data).
-    if (!haveExtData) gaugeRetryPending = true;
-    uint32_t gaugeIntervalMs = (!gaugeRetryPending && haveExtData) ? GAUGE_FETCH_INTERVAL_MS : GAUGE_RETRY_INTERVAL_MS;
-    if (!haveExtData || now - lastGaugeAttemptMs >= gaugeIntervalMs) {
-      bool ok = fetchGaugeData();
-      lastGaugeAttemptMs = now;
-      if (ok) {
-        lastGaugeSuccessMs = now;
-        gaugeRetryPending  = false;
-
-        // If we just got external data for the first time, schedule a single redraw.
-        if (!firstExtRedrawDone && haveExtData) {
-          if (isMainScreen()) {
-            resetToMainScreen(now);
-            firstExtRedrawDone    = true;
-          } else {
-            extDataRedrawPending = true;
-          }
-        }
-      } else {
-        gaugeRetryPending = true;
-      }
-    }
-
-    // Forecast fetch cadence:
-    // - Normal: hourly (FORECAST_FETCH_INTERVAL_MS)
-    // - If no forecast yet or after midnight rollover: retry interval (FORECAST_RETRY_INTERVAL_MS)
-    uint32_t forecastIntervalMs = (!midnightForecastPending && forecastCount > 0) ? FORECAST_FETCH_INTERVAL_MS : FORECAST_RETRY_INTERVAL_MS;
-    const bool firstForecastAttempt = (forecastCount == 0 && lastForecastFetchMs == 0);
-    if (midnightForecastPending || firstForecastAttempt || (now - lastForecastFetchMs) >= forecastIntervalMs) {
-      bool dailyOk = fetchForecast();
-      // Fetch hourly (today) data on the same schedule
-      bool hourlyOk = fetchHourlyForecast();
-      if (dailyOk || hourlyOk) {
-        lastForecastSuccessMs   = now;
-        midnightForecastPending = false;
-        forecastEverOk          = true;
-      }
-      lastForecastFetchMs = now;
-    }
+    now = millis();
   }
 
   // Log first time sync once it becomes valid (non-blocking).

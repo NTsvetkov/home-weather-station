@@ -234,6 +234,24 @@ Managed automatically by PlatformIO:
 
 ## Troubleshooting
 
+HTTPS validates the server hostname, certificate chain and validity period
+using ISRG Root X1/X2. After boot, external requests wait for valid NTP time;
+the indoor sensor and display continue working while NTP is unavailable.
+The TLS receive buffer is selected automatically: 2048 bytes with confirmed
+MFLN support, otherwise 16384. Legacy `CFG_TLS_*_BUFFER_BYTES` overrides are
+ignored. A different provider may require adding its root CA to
+`src/tls_roots.h`; there is no fallback to unauthenticated TLS. Review roots
+when provider chains change; their source is
+[Let's Encrypt](https://letsencrypt.org/certificates/).
+
+Daily and hourly forecasts have separate refresh times and retries. Malformed
+responses preserve the previous good snapshot; yesterday's hourly blocks are
+hidden after date rollover. `TZ_INFO` must match the API location's timezone.
+Outdoor data freshness uses the observation timestamp. HTTP requests remain
+synchronous, with at most one request per loop, increasing retry delays, and
+bounded response size/read time (`CFG_HTTP_TOTAL_TIMEOUT_MS`). AHT20 busy waits
+are bounded and failed sensors are reinitialized periodically.
+
 | Issue | Solution |
 |-------|----------|
 | Display is white/blank | Check wiring, especially CS, DC, RST pins |

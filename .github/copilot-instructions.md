@@ -13,7 +13,7 @@ ESP8266-based weather station with modular source structure:
 1. **Internal** → `readInternalSensor()` polls AHT20 every 2s → `intTemperature/intHumidity`
 2. **External** → `fetchGaugeData()` from meter.ac → `extTemperature/extHumidity/extPressure` + trend history
 3. **Forecast** → `fetchForecast()` from Open-Meteo → `forecast[3]` array with processed daily data
-4. **Display** → Main loop alternates screens via `showMainScreen` flag; `needRedraw` triggers redraws
+4. **Display** → Main loop rotates main / daily / main / hourly screens via `screenCycleIndex`; `needRedraw` triggers redraws
 
 ## Developer Workflows
 ```bash
@@ -36,16 +36,16 @@ Use `LOG_I/LOG_W/LOG_E` from `debug.h` (stores strings in PROGMEM). Control via 
 
 ### ESP8266 Constraints
 - Call `yield()` or `delay(1)` in loops to prevent watchdog resets
-- Use `WiFiClientSecureBearSSL` with `setInsecure()` for HTTPS (no cert validation)
+- Verify HTTPS with ISRG Root X1/X2 from `tls_roots.h`; wait for valid NTP time and never use `setInsecure()`. Probe MFLN before using a 2048-byte RX buffer; otherwise use 16384 bytes
 - Avoid `String` class in loops; use stack buffers (`char buf[32]`)
 
 ### Trend Calculation
-Ring buffer in `data.cpp` stores 8 samples. `findRefSample()` looks back `TREND_WINDOW_MINUTES` to compute direction (+1/0/-1) via `calcTrend()` with configurable thresholds.
+Ring buffer in `data.cpp` stores 10 timestamped samples with adaptive sampling. `getOldestSample()` rejects references older than the trend window plus one sampling interval; `calcTrend()` computes direction (+1/0/-1). Repeated observation timestamps do not add duplicate samples.
 
 ### Timekeeping (NTP)
 The `TimeKeeper` struct in `main.cpp` maintains a millis-based epoch estimate synced from NTP:
 - **Sync cadence**: `CFG_TIME_SYNC_INTERVAL_MS` (1h default), or `CFG_TIME_SYNC_RETRY_MS` (5s) while NTP invalid
-- **Midnight rollover**: `getLocalDateYYYYMMDD_fromTimekeeper()` checks date every `CFG_DATE_CHECK_INTERVAL_MS`; when date changes, `midnightForecastPending = true` triggers a forecast refresh
+- **Midnight rollover**: `getLocalDateYYYYMMDD_fromTimekeeper()` checks date every `CFG_DATE_CHECK_INTERVAL_MS`; when the date changes, the daily and hourly schedules refresh independently and yesterday's hourly blocks are hidden
 - **Timezone**: Configured via POSIX `TZ_INFO` string (default: Bulgaria EET/EEST)
 
 ```cpp
@@ -70,7 +70,7 @@ uint32_t baseMillis; // millis() at sync time
 Wind is displayed as a label, not an icon. The `DayIcon` enum maps to drawing functions in the forecast screen.
 
 ### Display Updates
-Set `needRedraw = true` to trigger screen refresh. Screen switching uses `lastScreenSwitchMs` timer. Internal sensor updates don't force redraws unless delta exceeds `CFG_TEMP_DELTA_C`.
+Set `needRedraw = true` to trigger screen refresh. Screen switching uses `lastScreenSwitchMs` timer. Internal sensor updates do not force redraws mid-screen; the next main-screen entry uses the latest values.
 
 ## Adding Features
 
