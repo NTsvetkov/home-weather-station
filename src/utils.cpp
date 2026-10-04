@@ -153,7 +153,7 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon) {
 }
 
 /** @brief Draw a smaller weather icon (~60% scale) for the today screen. */
-void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon, uint16_t bg, bool dim) {
+void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon, uint16_t bg, bool dim, bool night) {
   const uint16_t sunC   = dim ? CLR_SUN_DIM : CLR_SUN;
   const uint16_t cloudC = dim ? CLR_CLOUD_DIM : CLR_CLOUD;
   const uint16_t skyC   = dim ? CLR_SKY_DIM : CLR_SKY;
@@ -168,7 +168,28 @@ void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon
   bool isPartly  = (icon == ICON_PARTLY);
   bool isCloudy  = (icon == ICON_CLOUDY || isRain || isSnow || isThunder || isPartly);
 
-  if (isClear || isPartly) {
+  if (night && (isClear || isPartly)) {
+    // Crescent moon: a full disc with an offset disc in the background color cut out of it.
+    const uint16_t moonC = dim ? CLR_CLOUD_DIM : CLR_MOON;
+    int mX = isPartly ? (centerX - 17) : (centerX - 3);
+    int mY = isPartly ? (baseY - 13) : (baseY - 4);
+    int mR = isPartly ? 8 : 10;
+    gfx.fillCircle(mX, mY, mR, moonC);
+    if (isPartly) {
+      // Opening towards the cloud, so the visible rim is the upper-left part.
+      gfx.fillCircle(mX + 4, mY + 2, mR - 2, bg);
+    } else {
+      gfx.fillCircle(mX + mR / 2 + 1, mY - mR / 3, mR - 1, bg);
+    }
+    if (isClear) {
+      // Two small stars to the right of the crescent
+      gfx.drawFastHLine(centerX + 13, baseY - 11, 3, moonC);
+      gfx.drawFastVLine(centerX + 14, baseY - 12, 3, moonC);
+      gfx.drawFastHLine(centerX + 9, baseY + 3, 3, moonC);
+      gfx.drawFastVLine(centerX + 10, baseY + 2, 3, moonC);
+      return;
+    }
+  } else if (isClear || isPartly) {
     int sunX = isPartly ? (centerX - 12) : centerX;
     int sunY = isPartly ? (baseY - 6) : (baseY - 4);
     int sunR = isPartly ? 8 : 10;

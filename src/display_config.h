@@ -39,6 +39,7 @@
 #define CLR_WARM       0xFD85  // #FFB229 25..30C, warnings
 #define CLR_HOT        0xFAC9  // #FF594A > 30C, errors
 #define CLR_SUN        0xFE87  // #FFD239 sun icon
+#define CLR_MOON       0xF736  // #F0E6B0 moon icon (night blocks)
 
 // Dimmed icon colors (past blocks on the "today" screen)
 #define CLR_SUN_DIM    0x72E3

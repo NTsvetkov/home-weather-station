@@ -46,7 +46,7 @@ void drawWeatherIcon(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon);
  * @brief Draw a smaller weather icon (~60% scale) for the today screen.
  */
 void drawWeatherIconSmall(Adafruit_GFX& gfx, int centerX, int topY, DayIcon icon,
-                          uint16_t bg = 0x0000, bool dim = false);
+                          uint16_t bg = 0x0000, bool dim = false, bool night = false);
 
 /**
  * @brief Compact wind label (auto-shrinks to fit in a forecast column).

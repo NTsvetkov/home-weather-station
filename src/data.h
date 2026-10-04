@@ -61,6 +61,7 @@ struct ForecastBlock {
   float windMax;     ///< maximum wind speed in block (km/h)
   float cloudMean;   ///< mean cloud cover in block (%)
   int wmoCode;       ///< most severe WMO weather code in block
+  bool night;        ///< true when most of the block is after sunset (moon icon)
   bool valid;
 };
 

@@ -543,7 +543,7 @@ void drawTodayScreen(const UiStatus& st) {
     }
 
     DayIcon icon = pickDayIcon(fb.tMax, fb.tMin, fb.precip, fb.cloudMean, fb.wmoCode);
-    drawWeatherIconSmall(tft, cx, 68, icon, bg, isPast);
+    drawWeatherIconSmall(tft, cx, 68, icon, bg, isPast, fb.night);
 
     drawMaxTemp(cx, fb.tMax, isPast ? CLR_DIM : colorForTemperature(fb.tMax));
     drawMinTemp(cx, fb.tMin, isPast ? CLR_DIM : CLR_CLOUD);
