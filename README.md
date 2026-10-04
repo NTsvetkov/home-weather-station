@@ -2,7 +2,7 @@
 
 🇧🇬 [Прочети на български](README.bg.md)
 
-A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/outdoor temperature, humidity, pressure, a 3-day weather forecast, and today's detailed forecast split into 6-hour blocks.
+A compact ESP8266-based weather station with a 2.4" or 2.8" TFT display showing indoor/outdoor temperature, humidity, pressure, a 3-day weather forecast, and today's detailed forecast split into 6-hour blocks.
 
 ## Features
 
@@ -12,14 +12,36 @@ A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/o
 - 🕐 Today's forecast in 4 six-hour blocks (00-06, 06-12, 12-18, 18-24) with icons, temperature range, precipitation, and wind
 - 🔄 Three-screen rotation: main → 3-day forecast → main → today's forecast
 - 🕐 NTP time synchronization with timezone support
-- 📶 WiFi auto-reconnect
+- 📶 WiFi auto-reconnect and signal strength indicator
+- 🕒 Last update time and warnings for stale outdoor data
+
+## Display screens
+
+![Weather station UI: current readings, 3-day forecast, today's 6-hour blocks, and stale data without WiFi](docs/weather_station_screens.png)
+
+The main screen shows outdoor readings on the left and indoor readings on the
+right, with humidity, trend arrows, and a pressure scale below. The daily
+forecast shows tomorrow and the following two days. Today's screen groups
+hourly forecasts into four six-hour blocks: the current block is highlighted,
+past blocks are dimmed, and mostly dark blocks use moon icons.
+
+The status bar shows WiFi signal strength on the left, the screen name in the
+middle, and the last update time beside the refresh icon on the right. Weak
+WiFi signal bars turn amber. While reconnecting, the title reads
+**СВЪРЗВАНЕ** (connecting); after one minute without a connection, it changes to
+**НЯМА WIFI** (no WiFi).
+
+The update time turns amber when data is getting old and red when it is stale.
+Default thresholds are 10/30 minutes for outdoor readings and 1.5/3 hours for
+forecasts. Outdoor readings older than 30 minutes are dimmed; the pressure
+area shows their age. The indoor sensor continues to update without WiFi.
 
 ## Hardware Requirements
 
 | Component | Description |
 |-----------|-------------|
 | NodeMCU v3 | ESP8266 development board |
-| ILI9341 or ST7789 | 2.4" TFT LCD display (240x320, SPI) |
+| ILI9341 or ST7789 | 2.4" or 2.8" TFT LCD display (240x320, SPI) |
 | AHT20 | Temperature & humidity sensor (I2C) |
 
 ### Wiring Diagram
@@ -85,13 +107,13 @@ A compact ESP8266-based weather station with a 2.4" TFT display showing indoor/o
    #define WIFI_PASS "your-wifi-password"
    ```
 
-4. **Build and upload** (default: ST7789):
+4. **Build and upload** (default: ILI9341):
    ```bash
    pio run -t upload
    ```
-   For ILI9341, build the corresponding environment:
+   For ST7789, build the corresponding environment:
    ```bash
-   pio run -e nodemcuv2_ili9341 -t upload
+   pio run -e nodemcuv2_st7789 -t upload
    ```
 
 5. **Monitor serial output (optional):**
@@ -121,13 +143,13 @@ The project supports both **ILI9341** and **ST7789** TFT displays. Two PlatformI
 
 | Environment | Display | Build flag |
 |-------------|---------|------------|
-| `nodemcuv2_st7789` (default) | ST7789 | `-DDISPLAY_ST7789` |
-| `nodemcuv2_ili9341` | ILI9341 | `-DDISPLAY_ILI9341` |
+| `nodemcuv2_st7789` | ST7789 | `-DDISPLAY_ST7789` |
+| `nodemcuv2_ili9341` (default) | ILI9341 | `-DDISPLAY_ILI9341` |
 
-To switch displays, change `default_envs` in `platformio.ini`:
+To switch to ST7789, change `default_envs` in `platformio.ini`:
 ```ini
 [platformio]
-default_envs = nodemcuv2_ili9341
+default_envs = nodemcuv2_st7789
 ```
 Or build a specific environment directly:
 ```bash
@@ -145,6 +167,8 @@ The abstraction lives in `src/display_config.h` which conditionally includes the
 | SD card slot | Yes | No |
 | Wiring | identical | identical |
 | PlatformIO env | `nodemcuv2_ili9341` | `nodemcuv2_st7789` |
+
+These photos show the hardware versions with the previous interface. The current UI is shown above.
 
 | v1.2 — ILI9341 | v1.3 — ST7789 |
 |----------------|---------------|
