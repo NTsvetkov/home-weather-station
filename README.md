@@ -130,7 +130,9 @@ All settings are in `src/config.h`. Key options:
 | `WIFI_SSID` | - | Your WiFi network name |
 | `WIFI_PASS` | - | Your WiFi password |
 | `TZ_INFO` | `EET-2EEST...` | Timezone (POSIX format) |
-| `TREND_WINDOW_MINUTES` | 30 | Minutes for trend calculation |
+| `TREND_WINDOW_MINUTES` | 30 | Minutes for temperature/humidity trend |
+| `CFG_PRESSURE_TREND_WINDOW_MINUTES` | 180 | Minutes for pressure trend |
+| `CFG_PRESSURE_TREND_THRESHOLD_HPA` | 1.0 | Pressure change (hPa) that counts as rising/falling |
 | `CFG_MAIN_SCREEN_DURATION_MS` | 10000 | Main screen display time (ms) |
 | `CFG_FORECAST_SCREEN_DURATION_MS` | 10000 | Forecast screen display time (ms) |
 | `CFG_TODAY_SCREEN_DURATION_MS` | 10000 | Today's forecast screen display time (ms) |
@@ -233,6 +235,24 @@ Managed automatically by PlatformIO:
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson)
 
 ## Troubleshooting
+
+HTTPS validates the server hostname, certificate chain and validity period
+using ISRG Root X1/X2. After boot, external requests wait for valid NTP time;
+the indoor sensor and display continue working while NTP is unavailable.
+The TLS receive buffer is selected automatically: 2048 bytes with confirmed
+MFLN support, otherwise 16384. Legacy `CFG_TLS_*_BUFFER_BYTES` overrides are
+ignored. A different provider may require adding its root CA to
+`src/tls_roots.h`; there is no fallback to unauthenticated TLS. Review roots
+when provider chains change; their source is
+[Let's Encrypt](https://letsencrypt.org/certificates/).
+
+Daily and hourly forecasts have separate refresh times and retries. Malformed
+responses preserve the previous good snapshot; yesterday's hourly blocks are
+hidden after date rollover. `TZ_INFO` must match the API location's timezone.
+Outdoor data freshness uses the observation timestamp. HTTP requests remain
+synchronous, with at most one request per loop, increasing retry delays, and
+bounded response size/read time (`CFG_HTTP_TOTAL_TIMEOUT_MS`). AHT20 busy waits
+are bounded and failed sensors are reinitialized periodically.
 
 | Issue | Solution |
 |-------|----------|

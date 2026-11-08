@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <time.h>
 
 /**
  * @brief One day of forecast data (already post-processed for the UI).
@@ -69,6 +70,8 @@ struct ForecastBlock {
 extern ForecastBlock todayBlocks[4];
 /** @brief True when todayBlocks[] contain valid data. */
 extern bool haveTodayForecast;
+extern char todayForecastDate[11];
+extern time_t gaugeObservationEpoch;
 
 /**
  * @brief Fetch outdoor data from meter.ac gauge endpoint.

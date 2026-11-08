@@ -11,6 +11,8 @@
  */
 
 static Adafruit_AHTX0 aht;
+static bool sensorReady = false;
+static uint32_t lastInitAttemptMs = 0;
 
 static const float AHT_TEMP_MIN     = -40.0f;
 static const float AHT_TEMP_MAX     = 60.0f;
@@ -22,7 +24,9 @@ static const float AHT_HUMIDITY_MAX = 100.0f;
  * @return true if sensor was found and initialized.
  */
 bool initSensors() {
-  if (!aht.begin()) {
+  lastInitAttemptMs = millis();
+  sensorReady = aht.begin();
+  if (!sensorReady) {
     LOG_E("AHT20 not found - check wiring");
     return false;
   }
@@ -36,8 +40,15 @@ bool initSensors() {
  * @return true if values are valid and within sensor range.
  */
 bool readInternalSensor(float& temperature, float& humidity) {
-  sensors_event_t humidityEvent, tempEvent;
-  aht.getEvent(&humidityEvent, &tempEvent);
+  if (!sensorReady) {
+    if (millis() - lastInitAttemptMs < CFG_SENSOR_REINIT_INTERVAL_MS || !initSensors()) return false;
+  }
+  sensors_event_t humidityEvent{}, tempEvent{};
+  if (!aht.getEvent(&humidityEvent, &tempEvent)) {
+    sensorReady = false;
+    lastInitAttemptMs = millis();
+    return false;
+  }
 
   const bool ok = isfinite(tempEvent.temperature) &&
                   isfinite(humidityEvent.relative_humidity) &&
