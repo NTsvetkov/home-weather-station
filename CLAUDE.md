@@ -13,6 +13,7 @@ pio run                  # Build only
 pio run -t upload        # Build and flash to device
 pio device monitor       # Serial monitor at 115200 baud
 pio test -e native       # Host unit tests (requires GCC on PATH)
+run_tests.bat            # Windows: unit tests with GCC or MSVC, waits for a key
 ```
 
 First-time setup: `cp src/config.example.h src/config.h` and edit WiFi credentials. `config.h` is gitignored.
