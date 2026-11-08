@@ -13,6 +13,8 @@
 
 #include "data.h"
 #include "debug.h"
+#include "gauge_csv.h"
+#include "trend.h"
 
 // Fallback defaults if config constants are missing (CI without config.h).
 #ifndef CFG_GAUGE_HTTP_TIMEOUT_MS
@@ -209,10 +211,6 @@ static int secureGet(LimitedSecureClient& client, HTTPClient& https, uint8_t end
   return code;
 }
 
-static bool inRange(float value, float low, float high) {
-  return isfinite(value) && value >= low && value <= high;
-}
-
 static bool validWmo(int code) {
   switch (code) {
     case 0: case 1: case 2: case 3: case 45: case 48:
@@ -241,188 +239,9 @@ static bool numericValue(JsonVariantConst value, float& out, float low, float hi
   return inRange(out, low, high);
 }
 
-/* -------------------------------------------------------------------------- */
-/*                         Outdoor Trend History                              */
-/* -------------------------------------------------------------------------- */
-
-/** @brief Outdoor temperature and humidity at one observation time. */
-struct ClimateSample {
-  uint32_t epoch;  ///< gauge observation time (Unix seconds)
-  float t;         ///< temperature (C)
-  float h;         ///< humidity (%)
-};
-
-/** @brief Outdoor pressure at one observation time. */
-struct PressureSample {
-  uint32_t epoch;  ///< gauge observation time (Unix seconds)
-  float p;         ///< pressure (hPa)
-};
-
-static constexpr uint8_t TREND_BUFFER_SIZE = 10;
-
-/**
- * @brief Ring buffer of observations spread across one trend window.
- *
- * The gauge publishes at an irregular cadence, so samples are selected by
- * observation time. Spacing them by window / size lets the buffer span the
- * whole window; a slower gauge simply makes it span longer.
- */
-template <typename Sample>
-class TrendHistory {
- public:
-  explicit constexpr TrendHistory(uint32_t windowS) : windowS_(windowS) {}
-
-  /** @brief Store a sample unless the previous one is too recent. */
-  void add(const Sample& sample) {
-    if (count_ > 0) {
-      const Sample& newest = items_[(head_ + TREND_BUFFER_SIZE - 1) % TREND_BUFFER_SIZE];
-      if (sample.epoch - newest.epoch < windowS_ / TREND_BUFFER_SIZE) return;
-    }
-    items_[head_] = sample;
-    head_         = (head_ + 1) % TREND_BUFFER_SIZE;
-    if (count_ < TREND_BUFFER_SIZE) count_++;
-  }
-
-  /**
-   * @brief Find the sample whose age is closest to the trend window.
-   * @return false if no sample is between 75% and 150% of the window old.
-   */
-  bool findReference(uint32_t nowEpoch, Sample& out) const {
-    const uint32_t minAge = windowS_ / 4 * 3;
-    const uint32_t maxAge = windowS_ / 2 * 3;
-    uint32_t bestDistance = UINT32_MAX;
-    for (uint8_t i = 0; i < count_; i++) {
-      const uint32_t age = nowEpoch - items_[i].epoch;
-      if (age < minAge || age > maxAge) continue;
-      const uint32_t distance = (age > windowS_) ? age - windowS_ : windowS_ - age;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        out          = items_[i];
-      }
-    }
-    return bestDistance != UINT32_MAX;
-  }
-
- private:
-  const uint32_t windowS_;
-  Sample items_[TREND_BUFFER_SIZE] = {};
-  uint8_t count_                   = 0;
-  uint8_t head_                    = 0;
-};
-
-static TrendHistory<ClimateSample> climateHistory((uint32_t)TREND_WINDOW_MINUTES * 60UL);
-static TrendHistory<PressureSample> pressureHistory((uint32_t)CFG_PRESSURE_TREND_WINDOW_MINUTES * 60UL);
-
-/**
- * @brief Calculate trend direction based on delta and threshold.
- * @return -1 (falling), 0 (steady), or +1 (rising).
- */
-static int8_t calcTrend(float current, float ref, float threshold) {
-  float d = current - ref;
-
-  if (d >= threshold) return 1;
-  if (d <= -threshold) return -1;
-
-  return 0;
-}
-
-/**
- * @brief Parse float from a span (non-null-terminated) substring.
- *
- * Copies the span into a small temporary buffer, then uses strtof().
- */
-static bool parseFloatSpan(const char* start, size_t len, float& out) {
-  // Copy into a small buffer to use strtof safely.
-  // Values in gauge.txt are short (e.g. "-12.3").
-  if (len == 0 || len >= 32) return false;
-  char buf[32];
-  memcpy(buf, start, len);
-  buf[len] = '\0';
-
-  char* endptr = nullptr;
-  errno = 0;
-  out          = strtof(buf, &endptr);
-  if (endptr == buf || errno == ERANGE || !isfinite(out)) return false;
-  while (*endptr == ' ' || *endptr == '\t') ++endptr;
-  return *endptr == '\0';
-}
-
-/**
- * @brief Parse gauge CSV payload.
- *
- * Mapping (kept compatible with previous implementation):
- * - field0 = timestamp
- * - field1 = temperature
- * - field4 = pressure
- * - field5 = humidity
- */
-static bool parseGaugeCsv(const char* payload, float& outTemp, float& outPress, float& outHum, time_t& observed) {
-  // Expected mapping from existing code:
-  // field0 = timestamp, field1 = temperature, field4 = pressure, field5 = humidity
-  const char* s          = payload;
-  const char* fieldStart = s;
-  int field              = 0;
-
-  bool gotTemp  = false;
-  bool gotPress = false;
-  bool gotHum   = false;
-  bool gotTime  = false;
-
-  for (const char* p = s;; p++) {
-    char c     = *p;
-    bool atEnd = (c == '\0' || c == '\n' || c == '\r');
-    if (c == ',' || atEnd) {
-      size_t fieldLen = (size_t)(p - fieldStart);
-      if (field == 0) {
-        if (fieldLen == 10) {
-          uint64_t epoch = 0;
-          gotTime = true;
-          for (size_t i = 0; i < fieldLen; ++i) {
-            if (fieldStart[i] < '0' || fieldStart[i] > '9') { gotTime = false; break; }
-            epoch = epoch * 10UL + (uint32_t)(fieldStart[i] - '0');
-          }
-          const time_t now = time(nullptr);
-          gotTime = gotTime && epoch >= 1609459200 && epoch <= (uint64_t)now + 300;
-          if (gotTime) observed = (time_t)epoch;
-        }
-      } else if (field == 1) {
-        gotTemp = parseFloatSpan(fieldStart, fieldLen, outTemp);
-      } else if (field == 4) {
-        gotPress = parseFloatSpan(fieldStart, fieldLen, outPress);
-      } else if (field == 5) {
-        gotHum = parseFloatSpan(fieldStart, fieldLen, outHum);
-      }
-
-      if (atEnd) break;
-      field++;
-      fieldStart = p + 1;
-    }
-  }
-
-  return gotTime && gotTemp && gotPress && gotHum &&
-         inRange(outTemp, -80, 65) && inRange(outPress, 800, 1100) && inRange(outHum, 0, 100);
-}
-
-/**
- * @brief Update outdoor trend indicators from the history buffers.
- *
- * A metric without a suitable reference keeps its last computed trend.
- *
- * @param observed Epoch of the current gauge observation.
- */
-static void updateExtTrends(uint32_t observed) {
-  // Practical thresholds (avoid noise)
-  ClimateSample climateRef;
-  if (climateHistory.findReference(observed, climateRef)) {
-    extTempTrend = calcTrend(extTemperature, climateRef.t, 0.3f);
-    extHumTrend  = calcTrend(extHumidity, climateRef.h, 2.0f);
-  }
-
-  PressureSample pressureRef;
-  if (pressureHistory.findReference(observed, pressureRef)) {
-    extPressTrend = calcTrend(extPressure, pressureRef.p, CFG_PRESSURE_TREND_THRESHOLD_HPA);
-  }
-}
+static OutdoorTrends outdoorTrends((uint32_t)TREND_WINDOW_MINUTES * 60UL,
+                                   (uint32_t)CFG_PRESSURE_TREND_WINDOW_MINUTES * 60UL,
+                                   CFG_PRESSURE_TREND_THRESHOLD_HPA);
 
 /**
  * @brief Fetch and parse outdoor readings from meter.ac gauge endpoint.
@@ -457,33 +276,27 @@ bool fetchGaugeData() {
   https.end();
   if (reader.failed || (declaredSize >= 0 && length != (size_t)declaredSize)) return false;
 
-  float t = 0.0f;
-  float p = 0.0f;
-  float h = 0.0f;
-  time_t observed = 0;
-  if (!parseGaugeCsv(payload, t, p, h, observed)) {
+  GaugeReading reading{};
+  if (!parseGaugeCsv(payload, time(nullptr), reading)) {
     LOG_E("Gauge: CSV parse failed");
     return false;
   }
 
-  if (haveExtData && observed < gaugeObservationEpoch) return false;
+  if (haveExtData && reading.observed < gaugeObservationEpoch) return false;
 
-  extTemperature = t;
-  extPressure    = p;
-  extHumidity    = h;
+  extTemperature = reading.temperature;
+  extPressure    = reading.pressure;
+  extHumidity    = reading.humidity;
   haveExtData    = true;
-  const bool newObservation = observed > gaugeObservationEpoch;
-  gaugeObservationEpoch = observed;
+  const bool newObservation = reading.observed > gaugeObservationEpoch;
+  gaugeObservationEpoch = reading.observed;
 
-  // Repeated fetches of one observation must not add duplicate history.
-  const uint32_t observedEpoch = (uint32_t)observed;
-  if (newObservation) {
-    climateHistory.add({ observedEpoch, extTemperature, extHumidity });
-    pressureHistory.add({ observedEpoch, extPressure });
-  }
-
-  updateExtTrends(observedEpoch);
-  LOG_I("Gauge: %.1f C, %.0f%%, %.1f hPa", t, h, p);
+  outdoorTrends.update((uint32_t)reading.observed, newObservation,
+                       extTemperature, extHumidity, extPressure);
+  extTempTrend  = outdoorTrends.temperature();
+  extHumTrend   = outdoorTrends.humidity();
+  extPressTrend = outdoorTrends.pressure();
+  LOG_I("Gauge: %.1f C, %.0f%%, %.1f hPa", extTemperature, extHumidity, extPressure);
 
   return true;
 }
