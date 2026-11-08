@@ -1,0 +1,29 @@
+#pragma once
+
+#if __has_include("config.h")
+#include "config.h"
+#else
+#include "config.example.h"
+#endif
+
+#ifndef CFG_FORECAST_HTTP_TIMEOUT_MS
+#define CFG_FORECAST_HTTP_TIMEOUT_MS 9000UL
+#endif
+#ifndef CFG_HTTP_TOTAL_TIMEOUT_MS
+#define CFG_HTTP_TOTAL_TIMEOUT_MS 20000UL
+#endif
+#ifndef CFG_HTTP_MAX_HEADER_BYTES
+#define CFG_HTTP_MAX_HEADER_BYTES 4096
+#endif
+#ifndef CFG_GAUGE_MAX_RESPONSE_BYTES
+#define CFG_GAUGE_MAX_RESPONSE_BYTES 512
+#endif
+#ifndef CFG_FORECAST_MAX_RESPONSE_BYTES
+#define CFG_FORECAST_MAX_RESPONSE_BYTES 8192
+#endif
+#ifndef CFG_HOURLY_MAX_RESPONSE_BYTES
+#define CFG_HOURLY_MAX_RESPONSE_BYTES 12288
+#endif
+#ifndef CFG_SENSOR_REINIT_INTERVAL_MS
+#define CFG_SENSOR_REINIT_INTERVAL_MS 30000UL
+#endif

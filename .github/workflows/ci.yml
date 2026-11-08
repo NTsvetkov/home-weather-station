@@ -29,6 +29,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
-      - name: Build (NodeMCU v2)
-        run: pio run -e nodemcuv2
+      - name: Build (NodeMCU v2 with ILI9341)
+        run: pio run -e nodemcuv2_ili9341
+
+      - name: Build (NodeMCU v2 with ST7789)
+        run: pio run -e nodemcuv2_st7789
 

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pio run:*)",
+      "WebFetch(domain:open-meteo.com)",
+      "Bash(~/.platformio/penv/Scripts/pio run:*)",
+      "Bash(python3:*)",
+      "Bash(~/.platformio/penv/Scripts/python:*)"
+    ]
+  }
+}
