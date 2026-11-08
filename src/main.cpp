@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "project_config.h"
+#include "fetch_schedule.h"
 
 #ifndef WIFI_SSID
 #define WIFI_SSID ""
@@ -91,36 +92,6 @@
 /*                              State Variables                               */
 /* -------------------------------------------------------------------------- */
 
-// All retries use the completion time, including failed requests at boot/midnight.
-struct FetchSchedule {
-  bool attempted = false;
-  bool haveSuccess = false;
-  uint8_t failures = 0;
-  uint32_t lastAttemptMs = 0;
-  uint32_t lastSuccessMs = 0;
-
-  bool due(uint32_t now, uint32_t normal, uint32_t retry) const {
-    uint32_t interval = normal;
-    if (failures) {
-      const uint8_t shift = failures > 5 ? 4 : failures - 1;
-      uint64_t backoff = (uint64_t)retry << shift;
-      interval = backoff > normal ? normal : (uint32_t)backoff;
-    }
-    return !attempted || now - lastAttemptMs >= interval;
-  }
-  void finished(bool ok) {
-    attempted = true;
-    lastAttemptMs = millis();
-    if (ok) {
-      haveSuccess = true;
-      lastSuccessMs = lastAttemptMs;
-      failures = 0;
-    } else if (failures < 255) {
-      ++failures;
-    }
-  }
-  void refresh() { attempted = false; failures = 0; }
-};
 static FetchSchedule gaugeSchedule, dailySchedule, hourlySchedule;
 uint32_t lastScreenSwitchMs         = 0;
 uint32_t currentScreenDuration      = 0;
@@ -490,7 +461,7 @@ void loop() {
         ? STARTUP_GAUGE_RETRY_INTERVAL_MS : GAUGE_RETRY_INTERVAL_MS;
     if (gaugeSchedule.due(now, GAUGE_FETCH_INTERVAL_MS, retry)) {
       const bool ok = fetchGaugeData();
-      gaugeSchedule.finished(ok);
+      gaugeSchedule.finished(ok, millis());
       if (startupGaugeAttempts < STARTUP_GAUGE_MAX_ATTEMPTS) ++startupGaugeAttempts;
       if (ok && !firstExtRedrawDone) {
         if (isMainScreen()) {
@@ -501,9 +472,11 @@ void loop() {
         }
       }
     } else if (dailySchedule.due(now, FORECAST_FETCH_INTERVAL_MS, FORECAST_RETRY_INTERVAL_MS)) {
-      dailySchedule.finished(fetchForecast());
+      const bool ok = fetchForecast();
+      dailySchedule.finished(ok, millis());
     } else if (hourlySchedule.due(now, FORECAST_FETCH_INTERVAL_MS, FORECAST_RETRY_INTERVAL_MS)) {
-      hourlySchedule.finished(fetchHourlyForecast());
+      const bool ok = fetchHourlyForecast();
+      hourlySchedule.finished(ok, millis());
     }
     now = millis();
   }

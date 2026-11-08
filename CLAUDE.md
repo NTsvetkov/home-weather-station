@@ -12,20 +12,24 @@ ESP8266 (NodeMCU v3) weather station displaying indoor/outdoor temperature, humi
 pio run                  # Build only
 pio run -t upload        # Build and flash to device
 pio device monitor       # Serial monitor at 115200 baud
+pio test -e native       # Host unit tests (requires GCC on PATH)
 ```
 
 First-time setup: `cp src/config.example.h src/config.h` and edit WiFi credentials. `config.h` is gitignored.
 
-CI runs `pio run` on every PR and push to develop/main (`.github/workflows/ci.yml`). There are no unit tests.
+CI runs the unit tests and `pio run` for both displays on every PR and push to develop/main (`.github/workflows/ci.yml`). Unit tests in `test/` cover only the Arduino-free headers; check BearSSL and the display on the device.
 
 ## Architecture
 
-Six modules in `src/`:
+Modules in `src/`:
 
 | Module | Role |
 |--------|------|
 | `main.cpp` | Event loop, state machine, NTP timekeeping (`TimeKeeper` struct), WiFi lifecycle, screen switching |
-| `data.cpp/h` | HTTPS fetching (gauge CSV + Open-Meteo JSON), trend calculation via ring buffer |
+| `data.cpp/h` | HTTPS fetching (gauge CSV + Open-Meteo JSON) |
+| `trend.h` | Outdoor trends from ring buffers (`OutdoorTrends`, Arduino-free) |
+| `gauge_csv.h` | Gauge CSV parsing and validation (Arduino-free) |
+| `fetch_schedule.h` | Request timing and retry backoff (`FetchSchedule`, Arduino-free) |
 | `display.cpp/h` | TFT rendering: `drawMainScreen()`, `drawForecastScreen()`, `pickDayIcon()` |
 | `sensors.cpp/h` | AHT20 I2C reads: `initSensors()`, `readInternalSensor()` |
 | `utils.cpp/h` | Graphics helpers: text alignment, trend indicators, weather icons, UTF-8→Cyrillic conversion |
@@ -40,7 +44,7 @@ Six modules in `src/`:
 
 **Configuration:** All tunables use `#ifndef` guards with defaults. Override by defining `CFG_*` macros in `config.h`. Add new options to `config.example.h` first, then use `#ifndef` in the consuming `.cpp`.
 
-**Trend calculation:** `TrendHistory` ring buffers in `data.cpp` keep samples by gauge observation time. `findReference()` picks the sample closest to the window age (75–150% of it): `TREND_WINDOW_MINUTES` for temperature/humidity, `CFG_PRESSURE_TREND_WINDOW_MINUTES` for pressure. `calcTrend()` returns -1/0/+1 with per-metric thresholds (temp ≥ 0.3°C, etc.).
+**Trend calculation:** `TrendHistory` ring buffers in `trend.h` keep samples by gauge observation time. `findReference()` picks the sample closest to the window age (75–150% of it): `TREND_WINDOW_MINUTES` for temperature/humidity, `CFG_PRESSURE_TREND_WINDOW_MINUTES` for pressure. `calcTrend()` returns -1/0/+1 with per-metric thresholds (temp ≥ 0.3°C, etc.). With no suitable reference (startup or a long outage) a metric reports steady.
 
 **Forecast icons:** `pickDayIcon()` uses priority-based selection: storms (WMO 95/96/99) → heavy precip → light precip → cloud cover thresholds → defaults. Snow vs rain determined by tMax ≤ 2°C.
 

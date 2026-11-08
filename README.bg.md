@@ -216,10 +216,14 @@ pio run -e nodemcuv2_ili9341
 │   ├── display_config.h    # Абстракция на дисплей драйвера (ILI9341/ST7789)
 │   ├── display.cpp/h       # Функции за рисуване на TFT
 │   ├── data.cpp/h          # Структури и извличане на данни
+│   ├── trend.h             # Изчисляване на тенденциите навън
+│   ├── gauge_csv.h         # Разчитане и проверка на данните от станцията
+│   ├── fetch_schedule.h    # График и повторни опити за заявките
 │   ├── sensors.cpp/h       # Работа с AHT20 сензора
 │   └── utils.cpp/h         # Помощни функции
 ├── scripts/
 │   └── patch_font.py       # Pre-build скрипт за кирилски шрифт
+├── test/                   # Unit тестове на компютър (pio test -e native, изисква GCC)
 ├── docs/                   # Документация и снимки
 └── platformio.ini          # PlatformIO конфигурация
 ```

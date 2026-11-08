@@ -39,6 +39,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install "platformio==${PLATFORMIO_VERSION}"
 
+      - name: Unit tests
+        run: pio test -e native
+
       - name: Build (NodeMCU v2 with ILI9341)
         run: pio run -e nodemcuv2_ili9341
 

@@ -216,10 +216,14 @@ Icons are generated based on multiple parameters (not just WMO weather codes):
 │   ├── display_config.h    # Display driver abstraction (ILI9341/ST7789)
 │   ├── display.cpp/h       # TFT rendering functions
 │   ├── data.cpp/h          # Data structures and fetching
+│   ├── trend.h             # Outdoor trend calculation
+│   ├── gauge_csv.h         # Gauge data parsing and validation
+│   ├── fetch_schedule.h    # Request timing and retries
 │   ├── sensors.cpp/h       # AHT20 sensor handling
 │   └── utils.cpp/h         # Helper functions
 ├── scripts/
 │   └── patch_font.py       # Pre-build Cyrillic font patcher
+├── test/                   # Host unit tests (pio test -e native, requires GCC)
 ├── docs/                   # Documentation & images
 └── platformio.ini          # PlatformIO configuration
 ```
