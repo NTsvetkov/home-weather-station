@@ -186,6 +186,9 @@ static bool beginSecureHttp(LimitedSecureClient& client, HTTPClient& https,
 }
 
 static int secureGet(LimitedSecureClient& client, HTTPClient& https, uint8_t endpoint) {
+  // The TLS buffers need contiguous memory, so fragmentation matters as much as the total.
+  LOG_I("HTTPS: endpoint %u before TLS; free heap %u, largest block %u",
+        endpoint, ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
   client.beginHeaders();
   const int code = https.GET();
   client.endHeaders();
@@ -200,7 +203,8 @@ static int secureGet(LimitedSecureClient& client, HTTPClient& https, uint8_t end
     return -1;
   }
   if (code == HTTP_CODE_OK) {
-    LOG_I("HTTPS: endpoint %u verified; free heap %u", endpoint, ESP.getFreeHeap());
+    LOG_I("HTTPS: endpoint %u verified; free heap %u, largest block %u",
+          endpoint, ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
   }
   return code;
 }
