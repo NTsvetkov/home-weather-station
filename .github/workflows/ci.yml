@@ -2,13 +2,23 @@ name: CI
 
 on:
   pull_request:
-    branches: [develop, main]
   push:
     branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLATFORMIO_VERSION: "6.2.0"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,14 +34,13 @@ jobs:
           path: |
             ~/.platformio
             .pio
-          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
+          key: ${{ runner.os }}-pio-${{ env.PLATFORMIO_VERSION }}-${{ hashFiles('platformio.ini', 'scripts/**') }}
 
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: pip install "platformio==${PLATFORMIO_VERSION}"
 
       - name: Build (NodeMCU v2 with ILI9341)
         run: pio run -e nodemcuv2_ili9341
 
       - name: Build (NodeMCU v2 with ST7789)
         run: pio run -e nodemcuv2_st7789
-
