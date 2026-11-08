@@ -4,6 +4,7 @@
 #include "display_config.h"
 #include "display.h"
 #include "data.h"
+#include "reset_log.h"
 #include "utils.h"
 
 /**
@@ -274,6 +275,14 @@ static void drawStatusBar(const UiStatus& st, const char* title, uint32_t warnS,
     tft.drawLine(10, 4, 23, 15, CLR_HOT);
     tft.drawLine(22, 4, 9, 15, CLR_HOT);
     tft.drawLine(23, 4, 10, 15, CLR_HOT);
+  }
+
+  // Left: shown only after unexpected resets or when memory runs low
+  char resetLine1[16];
+  char resetLine2[16];
+  if (resetLogIndicator(resetLine1, sizeof(resetLine1), resetLine2, sizeof(resetLine2))) {
+    drawText(28, 3, 1, CLR_WARM, resetLine1);
+    drawText(28, 12, 1, CLR_WARM, resetLine2);
   }
 
   // Middle: screen name, or the WiFi problem

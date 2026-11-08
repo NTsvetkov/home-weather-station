@@ -79,6 +79,11 @@
 #define CFG_HOURLY_MAX_RESPONSE_BYTES       12288
 #define CFG_SENSOR_REINIT_INTERVAL_MS      30000UL
 
+// Status bar indicator: days to show the last unexpected reset, and the
+// largest free heap block below which a memory warning appears.
+#define CFG_RESET_INDICATOR_DAYS           7
+#define CFG_LOW_BLOCK_WARN_BYTES           18432UL
+
 // ArduinoJson document capacity
 #define CFG_FORECAST_JSON_DOC_CAPACITY     2048
 

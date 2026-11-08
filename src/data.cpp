@@ -14,6 +14,7 @@
 #include "data.h"
 #include "debug.h"
 #include "gauge_csv.h"
+#include "reset_log.h"
 #include "trend.h"
 
 // Fallback defaults if config constants are missing (CI without config.h).
@@ -189,6 +190,7 @@ static bool beginSecureHttp(LimitedSecureClient& client, HTTPClient& https,
 
 static int secureGet(LimitedSecureClient& client, HTTPClient& https, uint8_t endpoint) {
   // The TLS buffers need contiguous memory, so fragmentation matters as much as the total.
+  resetLogNoteBlock(ESP.getMaxFreeBlockSize());
   LOG_I("HTTPS: endpoint %u before TLS; free heap %u, largest block %u",
         endpoint, ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
   client.beginHeaders();

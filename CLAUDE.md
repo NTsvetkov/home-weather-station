@@ -31,6 +31,8 @@ Modules in `src/`:
 | `trend.h` | Outdoor trends from ring buffers (`OutdoorTrends`, Arduino-free) |
 | `gauge_csv.h` | Gauge CSV parsing and validation (Arduino-free) |
 | `fetch_schedule.h` | Request timing and retry backoff (`FetchSchedule`, Arduino-free) |
+| `reset_diary.h` | Unexpected reset bookkeeping (Arduino-free) |
+| `reset_log.cpp/h` | Stores resets in RTC memory and flash; status bar indicator (`R3 CRASH` or `MIN 15K`) |
 | `display.cpp/h` | TFT rendering: `drawMainScreen()`, `drawForecastScreen()`, `pickDayIcon()` |
 | `sensors.cpp/h` | AHT20 I2C reads: `initSensors()`, `readInternalSensor()` |
 | `utils.cpp/h` | Graphics helpers: text alignment, trend indicators, weather icons, UTF-8→Cyrillic conversion |

@@ -219,6 +219,8 @@ Icons are generated based on multiple parameters (not just WMO weather codes):
 │   ├── trend.h             # Outdoor trend calculation
 │   ├── gauge_csv.h         # Gauge data parsing and validation
 │   ├── fetch_schedule.h    # Request timing and retries
+│   ├── reset_diary.h       # Unexpected reset bookkeeping
+│   ├── reset_log.cpp/h     # Stored reset diary and status bar indicator
 │   ├── sensors.cpp/h       # AHT20 sensor handling
 │   └── utils.cpp/h         # Helper functions
 ├── scripts/

@@ -6,6 +6,7 @@
 
 #include "project_config.h"
 #include "fetch_schedule.h"
+#include "reset_log.h"
 
 #ifndef WIFI_SSID
 #define WIFI_SSID ""
@@ -272,6 +273,7 @@ void setup() {
   Serial.println();
   LOG_I("Booting...");
   LOG_I("Reset reason: %s", ESP.getResetReason().c_str());
+  resetLogBegin();
 
   initDisplay();
   LOG_I("Display initialized");
@@ -389,6 +391,8 @@ void loop() {
       haveIntData = false;
     }
   }
+
+  resetLogLoop();
 
   // Midnight rollover detection (local date based on NTP+TZ), throttled.
   if (tk.valid && (now - tk.lastDateCheckMs) >= DATE_CHECK_INTERVAL_MS) {
