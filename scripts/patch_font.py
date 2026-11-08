@@ -101,9 +101,18 @@ def extract_hex_bytes(text):
     # Find the array body between { and };
     m = re.search(r'font\[\]\s*PROGMEM\s*=\s*\{(.+?)\}', text, re.DOTALL)
     if not m:
-        return None
+        raise RuntimeError("[patch_font] font[] array not found in glcdfont.c")
     body = m.group(1)
-    return [int(x, 16) for x in re.findall(r'0[xX][0-9A-Fa-f]{2}', body)]
+    font_bytes = [int(x, 16) for x in re.findall(r'0[xX][0-9A-Fa-f]{2}', body)]
+    if len(font_bytes) != 1280:
+        raise RuntimeError(f"[patch_font] unexpected font size: {len(font_bytes)} bytes")
+    return font_bytes
+
+
+def has_all_glyphs(font_bytes):
+    """Return True if every Cyrillic glyph matches CYRILLIC_PATCHES."""
+    return all(font_bytes[pos * 5:pos * 5 + 5] == glyph
+               for pos, glyph in CYRILLIC_PATCHES.items())
 
 
 def rebuild_c_array(font_bytes):
@@ -118,10 +127,6 @@ def rebuild_c_array(font_bytes):
 def patch_font(source):
     """Patch the glcdfont.c source with Cyrillic characters."""
     font_bytes = extract_hex_bytes(source)
-    if font_bytes is None or len(font_bytes) != 1280:
-        print(f"  [patch_font] WARNING: unexpected font size "
-              f"({len(font_bytes) if font_bytes else 'parse error'}), skipping")
-        return None
 
     for pos, data in CYRILLIC_PATCHES.items():
         offset = pos * 5
@@ -153,25 +158,18 @@ for name in os.listdir(libdeps):
             break
 
 if gfx_dir is None:
-    print("  [patch_font] Adafruit GFX Library not found, skipping")
+    raise RuntimeError("[patch_font] Adafruit GFX Library not found")
+
+font_path = os.path.join(gfx_dir, 'glcdfont.c')
+if not os.path.isfile(font_path):
+    raise RuntimeError(f"[patch_font] {font_path} not found")
+
+with open(font_path, 'r') as f:
+    source_text = f.read()
+
+if has_all_glyphs(extract_hex_bytes(source_text)):
+    print("  [patch_font] Cyrillic glyphs already present")
 else:
-    font_path = os.path.join(gfx_dir, 'glcdfont.c')
-    if not os.path.isfile(font_path):
-        print(f"  [patch_font] {font_path} not found, skipping")
-    else:
-        with open(font_path, 'r') as f:
-            source_text = f.read()
-
-        # Check if already patched (Б at 0xC1 should be 0x7F,0x49,...,0x31)
-        font_bytes = extract_hex_bytes(source_text)
-        already_patched = (font_bytes and len(font_bytes) == 1280
-                           and font_bytes[0xC1*5:0xC1*5+5] == CYRILLIC_PATCHES[0xC1])
-
-        if already_patched:
-            print("  [patch_font] Cyrillic glyphs already present")
-        else:
-            patched = patch_font(source_text)
-            if patched:
-                with open(font_path, 'w') as f:
-                    f.write(patched)
-                print("  [patch_font] Patched glcdfont.c with Cyrillic glyphs")
+    with open(font_path, 'w') as f:
+        f.write(patch_font(source_text))
+    print("  [patch_font] Patched glcdfont.c with Cyrillic glyphs")

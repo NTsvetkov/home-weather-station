@@ -52,7 +52,7 @@ Six modules in `src/`:
 - BearSSL verifies HTTPS with ISRG Root X1/X2 from `tls_roots.h`. Never use `setInsecure()`. MFLN is probed before selecting a 2048-byte RX buffer; otherwise use 16384 bytes.
 - Must call `yield()` or `delay(1)` in any long-running loop to prevent watchdog resets.
 - Default JSON capacities: daily 2048 bytes (four API days), hourly 4000 bytes. User configurations may override them. Body readers cap both size and elapsed time.
-- A pre-build AHTX0 patch bounds busy waits at one second and fails the build if the pinned upstream implementation changes.
+- A pre-build AHTX0 patch bounds busy waits at one second and fails the build if the pinned upstream implementation or an already applied patch differs. After editing the patch, delete `.pio/libdeps` and rebuild.
 
 ## Adding Features
 

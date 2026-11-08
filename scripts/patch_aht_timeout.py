@@ -22,5 +22,5 @@ if marker not in source:
         raise RuntimeError("AHTX0 busy-wait implementation changed; review timeout patch before building")
     source_path.write_text(source.replace(original, replacement), encoding="utf-8")
     print("  [patch_aht_timeout] Bounded all three AHTX0 busy waits")
-elif source.count(marker) != 3 or source.count(original):
-    raise RuntimeError("Incomplete AHTX0 timeout patch")
+elif source.count(replacement) != 3 or source.count(original):
+    raise RuntimeError("AHTX0 timeout patch is outdated or incomplete; delete .pio/libdeps and rebuild")
