@@ -40,7 +40,7 @@ Six modules in `src/`:
 
 **Configuration:** All tunables use `#ifndef` guards with defaults. Override by defining `CFG_*` macros in `config.h`. Add new options to `config.example.h` first, then use `#ifndef` in the consuming `.cpp`.
 
-**Trend calculation:** Ring buffer of samples in `data.cpp`. `findRefSample()` looks back `TREND_WINDOW_MINUTES`, `calcTrend()` returns -1/0/+1 with per-metric thresholds (temp ≥ 0.3°C, etc.).
+**Trend calculation:** `TrendHistory` ring buffers in `data.cpp` keep samples by gauge observation time. `findReference()` picks the sample closest to the window age (75–150% of it): `TREND_WINDOW_MINUTES` for temperature/humidity, `CFG_PRESSURE_TREND_WINDOW_MINUTES` for pressure. `calcTrend()` returns -1/0/+1 with per-metric thresholds (temp ≥ 0.3°C, etc.).
 
 **Forecast icons:** `pickDayIcon()` uses priority-based selection: storms (WMO 95/96/99) → heavy precip → light precip → cloud cover thresholds → defaults. Snow vs rain determined by tMax ≤ 2°C.
 

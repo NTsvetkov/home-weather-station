@@ -40,7 +40,7 @@ Use `LOG_I/LOG_W/LOG_E` from `debug.h` (stores strings in PROGMEM). Control via 
 - Avoid `String` class in loops; use stack buffers (`char buf[32]`)
 
 ### Trend Calculation
-Ring buffer in `data.cpp` stores 10 timestamped samples with adaptive sampling. `getOldestSample()` rejects references older than the trend window plus one sampling interval; `calcTrend()` computes direction (+1/0/-1). Repeated observation timestamps do not add duplicate samples.
+`TrendHistory` ring buffers in `data.cpp` store 10 samples each by gauge observation time. `findReference()` picks the sample closest to the window age (75–150% of it), using `TREND_WINDOW_MINUTES` for temperature/humidity and `CFG_PRESSURE_TREND_WINDOW_MINUTES` for pressure; `calcTrend()` computes direction (+1/0/-1). Repeated observation timestamps do not add duplicate samples.
 
 ### Timekeeping (NTP)
 The `TimeKeeper` struct in `main.cpp` maintains a millis-based epoch estimate synced from NTP:

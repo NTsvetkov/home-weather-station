@@ -130,7 +130,9 @@ All settings are in `src/config.h`. Key options:
 | `WIFI_SSID` | - | Your WiFi network name |
 | `WIFI_PASS` | - | Your WiFi password |
 | `TZ_INFO` | `EET-2EEST...` | Timezone (POSIX format) |
-| `TREND_WINDOW_MINUTES` | 30 | Minutes for trend calculation |
+| `TREND_WINDOW_MINUTES` | 30 | Minutes for temperature/humidity trend |
+| `CFG_PRESSURE_TREND_WINDOW_MINUTES` | 180 | Minutes for pressure trend |
+| `CFG_PRESSURE_TREND_THRESHOLD_HPA` | 1.0 | Pressure change (hPa) that counts as rising/falling |
 | `CFG_MAIN_SCREEN_DURATION_MS` | 10000 | Main screen display time (ms) |
 | `CFG_FORECAST_SCREEN_DURATION_MS` | 10000 | Forecast screen display time (ms) |
 | `CFG_TODAY_SCREEN_DURATION_MS` | 10000 | Today's forecast screen display time (ms) |

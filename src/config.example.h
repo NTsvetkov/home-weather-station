@@ -11,6 +11,10 @@
 // Recommended: 30 (stable) or 10 (more reactive).
 #define TREND_WINDOW_MINUTES 30
 
+// Pressure trend: change of at least this many hPa over this many minutes.
+#define CFG_PRESSURE_TREND_WINDOW_MINUTES  180
+#define CFG_PRESSURE_TREND_THRESHOLD_HPA   1.0f
+
 // Timezone (POSIX TZ string) used for NTP local-midnight detection.
 // Bulgaria default: EET (UTC+2) with EEST (UTC+3) DST.
 #define TZ_INFO "EET-2EEST,M3.5.0/3,M10.5.0/4"

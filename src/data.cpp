@@ -40,6 +40,13 @@
 #ifndef TREND_WINDOW_MINUTES
 #define TREND_WINDOW_MINUTES 30
 #endif
+// Barometric tendency is conventionally judged over three hours.
+#ifndef CFG_PRESSURE_TREND_WINDOW_MINUTES
+#define CFG_PRESSURE_TREND_WINDOW_MINUTES 180
+#endif
+#ifndef CFG_PRESSURE_TREND_THRESHOLD_HPA
+#define CFG_PRESSURE_TREND_THRESHOLD_HPA 1.0f
+#endif
 
 /**
  * @file data.cpp
@@ -234,64 +241,73 @@ static bool numericValue(JsonVariantConst value, float& out, float low, float hi
 /*                         Outdoor Trend History                              */
 /* -------------------------------------------------------------------------- */
 
-/**
- * @brief A single timestamped sample of outdoor readings.
- */
-struct ExtSample {
-  uint32_t ms;  ///< millis() timestamp
-  float t;      ///< temperature (C)
-  float h;      ///< humidity (%)
-  float p;      ///< pressure (hPa)
+/** @brief Outdoor temperature and humidity at one observation time. */
+struct ClimateSample {
+  uint32_t epoch;  ///< gauge observation time (Unix seconds)
+  float t;         ///< temperature (C)
+  float h;         ///< humidity (%)
 };
 
-// Fixed buffer size - sample interval adapts to TREND_WINDOW_MINUTES.
-// 10 samples means oldest sample is always ~90% of the trend window.
+/** @brief Outdoor pressure at one observation time. */
+struct PressureSample {
+  uint32_t epoch;  ///< gauge observation time (Unix seconds)
+  float p;         ///< pressure (hPa)
+};
+
 static constexpr uint8_t TREND_BUFFER_SIZE = 10;
-static ExtSample extHist[TREND_BUFFER_SIZE];
-static uint8_t extHistCount                = 0;
-static uint8_t extHistHead                 = 0;
-static uint32_t lastTrendSampleMs          = 0;
 
 /**
- * @brief Calculate the adaptive sample interval based on trend window.
- * @return Interval in milliseconds between trend samples.
- */
-static uint32_t getTrendSampleIntervalMs() {
-  // Interval = window / buffer_size
-  // E.g., 30 min window / 10 samples = 3 min interval
-  return ((uint32_t)TREND_WINDOW_MINUTES * 60UL * 1000UL) / TREND_BUFFER_SIZE;
-}
-
-/**
- * @brief Push a new outdoor sample into the ring buffer.
- */
-static void pushExtSample(float t, float h, float p) {
-  extHist[extHistHead] = { millis(), t, h, p };
-  extHistHead          = (extHistHead + 1) % TREND_BUFFER_SIZE;
-  if (extHistCount < TREND_BUFFER_SIZE) extHistCount++;
-}
-
-/**
- * @brief Get the oldest sample in the ring buffer.
- * @param[out] out The oldest sample.
- * @return true if buffer has at least 2 samples.
+ * @brief Ring buffer of observations spread across one trend window.
  *
- * With adaptive sampling, the oldest sample is always close to the trend window age,
- * so we simply return it without searching for a specific time threshold.
+ * The gauge publishes at an irregular cadence, so samples are selected by
+ * observation time. Spacing them by window / size lets the buffer span the
+ * whole window; a slower gauge simply makes it span longer.
  */
-static bool getOldestSample(ExtSample& out) {
-  if (extHistCount < 2) return false;
+template <typename Sample>
+class TrendHistory {
+ public:
+  explicit constexpr TrendHistory(uint32_t windowS) : windowS_(windowS) {}
 
-  // Buffer order: head points to next write, so oldest is at (head - count).
-  int start = (int)extHistHead - (int)extHistCount;
-  if (start < 0) start += TREND_BUFFER_SIZE;
+  /** @brief Store a sample unless the previous one is too recent. */
+  void add(const Sample& sample) {
+    if (count_ > 0) {
+      const Sample& newest = items_[(head_ + TREND_BUFFER_SIZE - 1) % TREND_BUFFER_SIZE];
+      if (sample.epoch - newest.epoch < windowS_ / TREND_BUFFER_SIZE) return;
+    }
+    items_[head_] = sample;
+    head_         = (head_ + 1) % TREND_BUFFER_SIZE;
+    if (count_ < TREND_BUFFER_SIZE) count_++;
+  }
 
-  out = extHist[start];
-  const uint32_t age = millis() - out.ms;
-  const uint32_t window = (uint32_t)TREND_WINDOW_MINUTES * 60000UL;
-  if (age > window + getTrendSampleIntervalMs()) return false;
-  return true;
-}
+  /**
+   * @brief Find the sample whose age is closest to the trend window.
+   * @return false if no sample is between 75% and 150% of the window old.
+   */
+  bool findReference(uint32_t nowEpoch, Sample& out) const {
+    const uint32_t minAge = windowS_ / 4 * 3;
+    const uint32_t maxAge = windowS_ / 2 * 3;
+    uint32_t bestDistance = UINT32_MAX;
+    for (uint8_t i = 0; i < count_; i++) {
+      const uint32_t age = nowEpoch - items_[i].epoch;
+      if (age < minAge || age > maxAge) continue;
+      const uint32_t distance = (age > windowS_) ? age - windowS_ : windowS_ - age;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        out          = items_[i];
+      }
+    }
+    return bestDistance != UINT32_MAX;
+  }
+
+ private:
+  const uint32_t windowS_;
+  Sample items_[TREND_BUFFER_SIZE] = {};
+  uint8_t count_                   = 0;
+  uint8_t head_                    = 0;
+};
+
+static TrendHistory<ClimateSample> climateHistory((uint32_t)TREND_WINDOW_MINUTES * 60UL);
+static TrendHistory<PressureSample> pressureHistory((uint32_t)CFG_PRESSURE_TREND_WINDOW_MINUTES * 60UL);
 
 /**
  * @brief Calculate trend direction based on delta and threshold.
@@ -384,21 +400,24 @@ static bool parseGaugeCsv(const char* payload, float& outTemp, float& outPress, 
 }
 
 /**
- * @brief Update outdoor trend indicators from history buffer.
+ * @brief Update outdoor trend indicators from the history buffers.
+ *
+ * A metric without a suitable reference keeps its last computed trend.
+ *
+ * @param observed Epoch of the current gauge observation.
  */
-static void updateExtTrends() {
-  ExtSample ref;
-  if (!getOldestSample(ref)) {
-    // Not enough history yet.
-    // Keep the last computed trends instead of forcing "no change".
-    extTempTrend = extHumTrend = extPressTrend = 0;
-    return;
+static void updateExtTrends(uint32_t observed) {
+  // Practical thresholds (avoid noise)
+  ClimateSample climateRef;
+  if (climateHistory.findReference(observed, climateRef)) {
+    extTempTrend = calcTrend(extTemperature, climateRef.t, 0.3f);
+    extHumTrend  = calcTrend(extHumidity, climateRef.h, 2.0f);
   }
 
-  // Practical thresholds (avoid noise)
-  extTempTrend  = calcTrend(extTemperature, ref.t, 0.3f);
-  extHumTrend   = calcTrend(extHumidity, ref.h, 2.0f);
-  extPressTrend = calcTrend(extPressure, ref.p, 0.8f);
+  PressureSample pressureRef;
+  if (pressureHistory.findReference(observed, pressureRef)) {
+    extPressTrend = calcTrend(extPressure, pressureRef.p, CFG_PRESSURE_TREND_THRESHOLD_HPA);
+  }
 }
 
 /**
@@ -452,17 +471,14 @@ bool fetchGaugeData() {
   const bool newObservation = observed > gaugeObservationEpoch;
   gaugeObservationEpoch = observed;
 
-  // Adaptive sampling: only store a sample if enough time has passed.
-  // This ensures the buffer covers the full trend window regardless of fetch frequency.
-  const uint32_t now            = millis();
-  const uint32_t sampleInterval = getTrendSampleIntervalMs();
-  if (newObservation && time(nullptr) - observed <= (time_t)TREND_WINDOW_MINUTES * 60 &&
-      (extHistCount == 0 || (now - lastTrendSampleMs) >= sampleInterval)) {
-    pushExtSample(extTemperature, extHumidity, extPressure);
-    lastTrendSampleMs = now;
+  // Repeated fetches of one observation must not add duplicate history.
+  const uint32_t observedEpoch = (uint32_t)observed;
+  if (newObservation) {
+    climateHistory.add({ observedEpoch, extTemperature, extHumidity });
+    pressureHistory.add({ observedEpoch, extPressure });
   }
 
-  updateExtTrends();
+  updateExtTrends(observedEpoch);
   LOG_I("Gauge: %.1f C, %.0f%%, %.1f hPa", t, h, p);
 
   return true;
