@@ -224,6 +224,7 @@ Icons are generated based on multiple parameters (not just WMO weather codes):
 ├── scripts/
 │   └── patch_font.py       # Pre-build Cyrillic font patcher
 ├── test/                   # Host unit tests (pio test -e native, requires GCC)
+├── run_tests.bat           # Run the unit tests on Windows (GCC or MSVC)
 ├── docs/                   # Documentation & images
 └── platformio.ini          # PlatformIO configuration
 ```

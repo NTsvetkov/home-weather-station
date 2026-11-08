@@ -224,6 +224,7 @@ pio run -e nodemcuv2_ili9341
 ├── scripts/
 │   └── patch_font.py       # Pre-build скрипт за кирилски шрифт
 ├── test/                   # Unit тестове на компютър (pio test -e native, изисква GCC)
+├── run_tests.bat           # Пуска unit тестовете под Windows (GCC или MSVC)
 ├── docs/                   # Документация и снимки
 └── platformio.ini          # PlatformIO конфигурация
 ```
